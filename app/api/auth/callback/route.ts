@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { OAuth2Client } from 'google-auth-library'
+import { google } from 'googleapis'
 
-const client = new OAuth2Client(
-  process.env.GMAIL_CLIENT_ID,
-  process.env.GMAIL_CLIENT_SECRET,
-  'http://localhost:3000/api/auth/callback'
-)
+const REDIRECT_URI = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}/api/auth/callback`
+  : 'http://localhost:3000/api/auth/callback'
+
+const APP_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : 'http://localhost:3000'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -16,9 +18,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { tokens } = await client.getToken(code)
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      REDIRECT_URI
+    )
 
-    const response = NextResponse.redirect('http://localhost:3000/email')
+    const { tokens } = await oauth2Client.getToken(code)
+
+    const response = NextResponse.redirect(`${APP_URL}/email`)
     response.cookies.set('gmail_access_token', tokens.access_token ?? '', {
       httpOnly: true,
       maxAge: 3600,

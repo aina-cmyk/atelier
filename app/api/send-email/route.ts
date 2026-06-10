@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { OAuth2Client } from 'google-auth-library'
 import { google } from 'googleapis'
 
-const oauth2Client = new OAuth2Client(
-  process.env.GMAIL_CLIENT_ID,
-  process.env.GMAIL_CLIENT_SECRET,
-  'http://localhost:3000/api/auth/callback'
-)
+const REDIRECT_URI = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}/api/auth/callback`
+  : 'http://localhost:3000/api/auth/callback'
+
+function getOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    REDIRECT_URI
+  )
+}
 
 function makeEmailBody(to: string, subject: string, body: string): string {
   const email = [
@@ -32,6 +37,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const oauth2Client = getOAuthClient()
     oauth2Client.setCredentials({
       access_token: accessToken,
       refresh_token: refreshToken

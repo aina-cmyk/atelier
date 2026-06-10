@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server'
-import { OAuth2Client } from 'google-auth-library'
+import { google } from 'googleapis'
 
-const client = new OAuth2Client(
-  process.env.GMAIL_CLIENT_ID,
-  process.env.GMAIL_CLIENT_SECRET,
-  'http://localhost:3000/api/auth/callback'
-)
+const REDIRECT_URI = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}/api/auth/callback`
+  : 'http://localhost:3000/api/auth/callback'
 
 export async function GET() {
-  const url = client.generateAuthUrl({
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    REDIRECT_URI
+  )
+
+  const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/gmail.send'],
     prompt: 'consent'
