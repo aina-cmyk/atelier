@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@vercel/postgres'
-import { initialiseDb } from '@/lib/db'
+import { initialiseDb, isVercel, getLocalDb } from '@/lib/db'
 
 export async function GET() {
   try {
     await initialiseDb()
-    const result = await sql`SELECT * FROM saved_suggestions ORDER BY created_at DESC`
-    return NextResponse.json({ success: true, suggestions: result.rows })
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`SELECT * FROM saved_suggestions ORDER BY created_at DESC`
+      return NextResponse.json({ success: true, suggestions: result.rows })
+    } else {
+      const db = getLocalDb()
+      const suggestions = db.prepare('SELECT * FROM saved_suggestions ORDER BY created_at DESC').all()
+      return NextResponse.json({ success: true, suggestions })
+    }
   } catch (error) {
     console.error('Saved suggestions fetch error:', error)
     return NextResponse.json({ error: 'Failed to fetch saved suggestions' }, { status: 500 })
@@ -21,11 +27,13 @@ export async function POST(request: NextRequest) {
     if (!brand_name || !category || !reason || !signal) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-    await sql`
-      INSERT INTO saved_suggestions (brand_name, category, reason, signal)
-      VALUES (${brand_name}, ${category}, ${reason}, ${signal})
-      ON CONFLICT (brand_name) DO NOTHING
-    `
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      await sql`INSERT INTO saved_suggestions (brand_name, category, reason, signal) VALUES (${brand_name}, ${category}, ${reason}, ${signal}) ON CONFLICT (brand_name) DO NOTHING`
+    } else {
+      const db = getLocalDb()
+      db.prepare('INSERT OR IGNORE INTO saved_suggestions (brand_name, category, reason, signal) VALUES (?, ?, ?, ?)').run(brand_name, category, reason, signal)
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Save suggestion error:', error)
@@ -38,7 +46,13 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const brand_name = searchParams.get('brand_name')
     if (!brand_name) return NextResponse.json({ error: 'brand_name is required' }, { status: 400 })
-    await sql`DELETE FROM saved_suggestions WHERE brand_name = ${brand_name}`
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      await sql`DELETE FROM saved_suggestions WHERE brand_name = ${brand_name}`
+    } else {
+      const db = getLocalDb()
+      db.prepare('DELETE FROM saved_suggestions WHERE brand_name = ?').run(brand_name)
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete suggestion error:', error)

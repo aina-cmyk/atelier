@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { sql } from '@vercel/postgres'
-import { initialiseDb } from '@/lib/db'
+import { initialiseDb, isVercel, getLocalDb } from '@/lib/db'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -16,14 +15,28 @@ export async function POST(request: Request) {
     const cutoffDate = new Date()
     cutoffDate.setMonth(cutoffDate.getMonth() - REENGAGE_MONTHS)
 
-    const reengageRows = await sql`
-      SELECT DISTINCT brand_name, MAX(sent_at) as last_contacted
-      FROM contact_history
-      WHERE sent_at <= ${cutoffDate.toISOString()}
-      GROUP BY brand_name
-    `
+    let reengageRows: { brand_name: string; last_contacted: string }[] = []
 
-    const reengageBrands = reengageRows.rows.filter(
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`
+        SELECT DISTINCT brand_name, MAX(sent_at) as last_contacted
+        FROM contact_history
+        WHERE sent_at <= ${cutoffDate.toISOString()}
+        GROUP BY brand_name
+      `
+      reengageRows = result.rows as { brand_name: string; last_contacted: string }[]
+    } else {
+      const db = getLocalDb()
+      reengageRows = db.prepare(`
+        SELECT brand_name, MAX(sent_at) as last_contacted
+        FROM contact_history
+        WHERE sent_at <= ?
+        GROUP BY brand_name
+      `).all(cutoffDate.toISOString()) as { brand_name: string; last_contacted: string }[]
+    }
+
+    const reengageBrands = reengageRows.filter(
       r => !excludeBrands.includes(r.brand_name)
     )
 

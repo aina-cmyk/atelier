@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@vercel/postgres'
-import { initialiseDb } from '@/lib/db'
+import { initialiseDb, isVercel, getLocalDb } from '@/lib/db'
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,10 +7,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const brandName = searchParams.get('brand_name')
     if (!brandName) return NextResponse.json({ error: 'brand_name is required' }, { status: 400 })
-    const result = await sql`
-      SELECT * FROM contact_history WHERE brand_name = ${brandName} ORDER BY sent_at DESC
-    `
-    return NextResponse.json({ success: true, history: result.rows })
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`SELECT * FROM contact_history WHERE brand_name = ${brandName} ORDER BY sent_at DESC`
+      return NextResponse.json({ success: true, history: result.rows })
+    } else {
+      const db = getLocalDb()
+      const history = db.prepare('SELECT * FROM contact_history WHERE brand_name = ? ORDER BY sent_at DESC').all(brandName)
+      return NextResponse.json({ success: true, history })
+    }
   } catch (error) {
     console.error('Contact history error:', error)
     return NextResponse.json({ error: 'Failed to fetch contact history' }, { status: 500 })
@@ -23,10 +27,13 @@ export async function POST(request: NextRequest) {
     await initialiseDb()
     const body = await request.json()
     const { brand_name, contact_role, contact_name, contact_email, method = 'email' } = body
-    await sql`
-      INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email, method)
-      VALUES (${brand_name}, ${contact_role}, ${contact_name}, ${contact_email}, ${method})
-    `
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      await sql`INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email, method) VALUES (${brand_name}, ${contact_role}, ${contact_name}, ${contact_email}, ${method})`
+    } else {
+      const db = getLocalDb()
+      db.prepare('INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email, method) VALUES (?, ?, ?, ?, ?)').run(brand_name, contact_role, contact_name, contact_email, method)
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Contact history POST error:', error)
