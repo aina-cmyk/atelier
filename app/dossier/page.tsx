@@ -21,6 +21,13 @@ interface Dossier {
     product_category: number
     order_viability: number
   }
+  score_explanations?: {
+    annual_revenue?: string
+    retail_distribution?: string
+    market_presence?: string
+    product_category?: string
+    order_viability?: string
+  }
   score_band: string
   data_quality: string
 }
@@ -211,20 +218,19 @@ export default function DossierPage() {
                   const val = dossier.score_breakdown[c.key as keyof typeof dossier.score_breakdown]
                   const pct = (val / c.max) * 100
                   const valColour = pct >= 80 ? 'var(--green-400)' : pct >= 50 ? 'var(--orange-400)' : 'var(--red-500)'
+                  const explanation = dossier.score_explanations?.[c.key as keyof typeof dossier.score_explanations]
                   return (
-                    <tr key={c.key}>
-                      <td>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>{c.label}</div>
-                        <div style={{ fontSize: 11, color: 'var(--slate-400)', marginTop: 2 }}>{c.threshold}</div>
-                      </td>
-                      <td>
-                        <div className="crit-bar">
-                          <span style={{ width: `${pct}%` }} />
-                        </div>
-                      </td>
-                      <td style={{ color: valColour, fontWeight: 500, fontSize: 13 }}>{val} / {c.max}</td>
-                      <td><span className={`weight-pill weight-${c.weight}`}>{c.weight}</span></td>
-                    </tr>
+                    <CriteriaRow
+                      key={c.key}
+                      label={c.label}
+                      threshold={c.threshold}
+                      val={val}
+                      max={c.max}
+                      pct={pct}
+                      valColour={valColour}
+                      weight={c.weight}
+                      explanation={explanation}
+                    />
                   )
                 })}
               </tbody>
@@ -338,4 +344,58 @@ export default function DossierPage() {
       )}
     </div>
   )
+  function CriteriaRow({ label, threshold, val, max, pct, valColour, weight, explanation }: {
+  label: string
+  threshold: string
+  val: number
+  max: number
+  pct: number
+  valColour: string
+  weight: string
+  explanation?: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <>
+      <tr
+        onClick={() => explanation && setExpanded(!expanded)}
+        style={{ cursor: explanation ? 'pointer' : 'default' }}
+      >
+        <td>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 13 }}>{label}</div>
+              <div style={{ fontSize: 11, color: 'var(--slate-400)', marginTop: 2 }}>{threshold}</div>
+            </div>
+            {explanation && (
+              <svg
+                width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                style={{ color: 'var(--slate-400)', flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+              >
+                <polyline points="6,9 12,15 18,9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+        </td>
+        <td>
+          <div className="crit-bar">
+            <span style={{ width: `${pct}%` }} />
+          </div>
+        </td>
+        <td style={{ color: valColour, fontWeight: 500, fontSize: 13 }}>{val} / {max}</td>
+        <td><span className={`weight-pill weight-${weight}`}>{weight}</span></td>
+      </tr>
+      {expanded && explanation && (
+        <tr>
+          <td colSpan={4} style={{ paddingTop: 0, paddingBottom: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--slate-500)', background: 'var(--slate-100)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', lineHeight: 1.5 }}>
+              {explanation}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
 }

@@ -179,6 +179,13 @@ function buildResearchPrompt(brandName: string): string {
     '    "product_category": number,\n' +
     '    "order_viability": number\n' +
     '  },\n' +
+    '  "score_explanations": {\n' +
+    '    "annual_revenue": "string (one sentence explaining the score)",\n' +
+    '    "retail_distribution": "string (one sentence explaining the score)",\n' +
+    '    "market_presence": "string (one sentence explaining the score)",\n' +
+    '    "product_category": "string (one sentence explaining the score)",\n' +
+    '    "order_viability": "string (one sentence explaining the score)"\n' +
+    '  },\n' +
     '  "score_band": "Hot | Warm | Watch | Pass",\n' +
     '  "data_quality": "sufficient | insufficient"\n' +
     '}'
