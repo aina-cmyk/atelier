@@ -91,12 +91,11 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const { getDb } = await import('@/lib/db')
-      const db = getDb()
-      db.prepare(`
-        INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email)
-        VALUES (?, ?, ?, ?)
-      `).run(body.dossier?.brand_name ?? '', body.role ?? '', contactName, to)
+      const { sql } = await import('@vercel/postgres')
+      await sql`
+        INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email, method)
+        VALUES (${body.dossier?.brand_name ?? ''}, ${body.role ?? ''}, ${contactName}, ${to}, 'email')
+      `
     } catch (e) {
       console.error('Failed to log contact history:', e)
     }

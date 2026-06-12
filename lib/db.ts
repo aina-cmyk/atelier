@@ -1,32 +1,19 @@
-import Database from 'better-sqlite3'
-import path from 'path'
+import { sql } from '@vercel/postgres'
 
-const DB_PATH = path.join(process.cwd(), 'atelier.db')
-
-let db: Database.Database
-
-export function getDb(): Database.Database {
-  if (!db) {
-    db = new Database(DB_PATH)
-    db.pragma('journal_mode = WAL')
-    initialiseSchema(db)
-  }
-  return db
-}
-
-function initialiseSchema(db: Database.Database) {
-  db.exec(`
+export async function initialiseDb() {
+  await sql`
     CREATE TABLE IF NOT EXISTS dossiers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      brand_name TEXT NOT NULL UNIQUE,
+      id SERIAL PRIMARY KEY,
+      brand_name TEXT NOT NULL,
       brand_name_normalised TEXT NOT NULL UNIQUE,
       dossier_json TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`
     CREATE TABLE IF NOT EXISTS usage_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       brand_name TEXT NOT NULL,
       call_type TEXT NOT NULL,
       input_tokens INTEGER NOT NULL,
@@ -34,9 +21,41 @@ function initialiseSchema(db: Database.Database) {
       rate_per_million_input REAL NOT NULL,
       rate_per_million_output REAL NOT NULL,
       estimated_cost_usd REAL NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `)
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS templates (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS contact_history (
+      id SERIAL PRIMARY KEY,
+      brand_name TEXT NOT NULL,
+      contact_role TEXT NOT NULL,
+      contact_name TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      method TEXT DEFAULT 'email',
+      sent_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS saved_suggestions (
+      id SERIAL PRIMARY KEY,
+      brand_name TEXT NOT NULL UNIQUE,
+      category TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      signal TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
 }
 
 export function normaliseBrandName(name: string): string {
