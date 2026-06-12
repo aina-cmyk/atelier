@@ -303,14 +303,16 @@ export default function ContactsPage() {
         </>
       )}
 
-      <button
-        onClick={handleProceed}
-        disabled={!selectedContact}
-        className="btn btn-primary btn-block"
-        style={{ height: 48, fontSize: 15 }}
-      >
-        {selectedContact ? `Generate email for ${selectedContact.name}` : 'Select a contact above'}
-      </button>
+      <div style={{ position: 'sticky', bottom: 24, zIndex: 10 }}>
+        <button
+          onClick={handleProceed}
+          disabled={!selectedContact}
+          className="btn btn-primary btn-block"
+          style={{ height: 52, fontSize: 15, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}
+        >
+          {selectedContact ? `Generate email for ${selectedContact.name}` : 'Select a contact above'}
+        </button>
+      </div>
     </div>
   )
 }

@@ -215,6 +215,14 @@ export default function EmailPage() {
       <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 28 }}>
         Personalised from {dossier.brand_name as string}&apos;s research dossier. Review every detail before it leaves your inbox.
       </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 16px', background: 'var(--slate-100)', borderRadius: 'var(--radius-md)', border: '1px solid var(--black-100)' }}>
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0, color: 'var(--slate-400)' }}>
+          <rect x="2" y="4" width="20" height="16" rx="2" strokeWidth="2"/>
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" strokeWidth="2"/>
+        </svg>
+        <span style={{ fontSize: 13, color: 'var(--slate-500)', flex: 1 }}>Emails send from your Gmail account</span>
+        <a href="/api/auth/gmail" className="btn btn-secondary btn-sm">Connect Gmail</a>
+      </div>
 
       {sent && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--green-100)', border: '1px solid var(--green-300)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 24 }}>
@@ -282,7 +290,8 @@ export default function EmailPage() {
               position: 'absolute', right: 0, top: '100%', marginTop: 4,
               background: '#fff', border: '1px solid var(--black-100)',
               borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-400)',
-              minWidth: 280, zIndex: 50, overflow: 'hidden'
+              minWidth: 280, zIndex: 50, overflow: 'hidden',
+              maxHeight: 360, overflowY: 'auto'
             }}>
               {loadingContacts && (
                 <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -449,6 +458,10 @@ export default function EmailPage() {
               <div className="modal-sub">Review before sending — this cannot be undone.</div>
             </div>
             <div className="modal-body">
+              <div className="summary-row">
+                <div className="k">From</div>
+                <div className="v">Samara Abells — via Gmail</div>
+              </div>
               <div className="summary-row">
                 <div className="k">To</div>
                 <div className="v">{contact?.name} &lt;{contact?.email}&gt;</div>
