@@ -88,14 +88,15 @@ export default function EmailPage() {
     if (!dossier) return
     setLoadingContacts(true)
     try {
-      const res = await fetch('/api/lookup-contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          brand_name: dossier.brand_name,
-          domain: (dossier as {website?: string}).website ?? ''
-        })
-      })
+      const [contactsRes, historyRes] = await Promise.all([
+        fetch('/api/lookup-contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            brand_name: dossier.brand_name,
+            domain: (dossier as {website?: string}).website ?? ''
+          })
+        }),
         fetch(`/api/contact-history?brand_name=${encodeURIComponent(dossier.brand_name as string)}`)
       ])
       const contactsData = await contactsRes.json()
