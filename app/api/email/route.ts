@@ -22,40 +22,77 @@ const MESSAGE_MATRIX: Record<string, { focus: string; proofPoints: string }> = {
   CEO: {
     focus: 'More products to market faster and topline revenue growth',
     proofPoints: 'Funding, retail expansion, acquisition activity'
+  },
+  'VP Product': {
+    focus: 'Scaling product development capacity without building in-house manufacturing',
+    proofPoints: 'SKU complexity, NPD pipeline, new category expansion'
+  },
+  'VP Marketing': {
+    focus: 'Speed to market and launch cadence to stay ahead of trends',
+    proofPoints: 'Launch cadence, category trends, retail expansion'
+  },
+  'VP Operations': {
+    focus: 'Operational efficiency and supply chain reliability',
+    proofPoints: 'Manufacturing capacity, lead times, quality consistency'
+  },
+  'Head of NPD': {
+    focus: 'Bringing new formulations to market faster with expert manufacturing partners',
+    proofPoints: 'Formulation capabilities, SKU complexity, NPD support'
   }
 }
 
-function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contactName: string): string {
-  const matrix = MESSAGE_MATRIX[role]
+function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contactName: string, template?: { subject: string; body: string }): string {
+  const matrix = MESSAGE_MATRIX[role] ?? MESSAGE_MATRIX['CEO']
   const retailers = (dossier.retailers as { name: string }[])?.map(r => r.name).join(', ') ?? 'Unknown'
   const signals = (dossier.signals as { type: string; description: string }[])
     ?.slice(0, 3)
-    .map(s => s.type + ': ' + s.description)
+    .map(s => s.type + ': ' + s.description.replace(/\*\*/g, ''))
     .join('\n') ?? ''
 
-  return 'You are writing a cold outreach email on behalf of Atelier, an ANZ contract manufacturer serving beauty, health, and wellness brands. Atelier helps brands get more products to market faster by providing outsourced manufacturing capacity.\n\n' +
-    'Write a short, direct, personalised cold outreach email to a senior executive at a brand Atelier is considering approaching.\n\n' +
+  if (template) {
+    return 'You are personalising a saved email template for a specific brand and contact on behalf of Atelier, an ANZ contract manufacturer.\n\n' +
+      'SAVED TEMPLATE TO USE AS STYLE GUIDE:\n' +
+      'Subject: ' + template.subject + '\n' +
+      'Body:\n' + template.body + '\n\n' +
+      'RECIPIENT\n' +
+      'Name: ' + contactName + '\n' +
+      'Role: ' + role + '\n' +
+      'Brand: ' + dossier.brand_name + '\n' +
+      'Revenue (estimated): ' + (dossier.revenue_estimate ?? 'Unknown') + '\n' +
+      'Retail presence: ' + retailers + '\n\n' +
+      'BRAND SIGNALS (weave at least two into the email)\n' +
+      signals + '\n\n' +
+      'INSTRUCTIONS\n' +
+      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient formally by their last name.\n\n' +
+      'OUTPUT FORMAT\n' +
+      'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
+      '{ "subject": "string", "body": "string" }'
+  }
+
+  return 'You are writing a formal cold outreach email on behalf of Atelier, an ANZ contract manufacturer serving beauty, health, and wellness brands.\n\n' +
+    'Write a professional, concise outreach email to a senior executive. The tone should be formal and business-appropriate.\n\n' +
     'RECIPIENT\n' +
     'Name: ' + contactName + '\n' +
     'Role: ' + role + '\n' +
     'Brand: ' + dossier.brand_name + '\n' +
     'Revenue (estimated): ' + (dossier.revenue_estimate ?? 'Unknown') + '\n' +
     'Retail presence: ' + retailers + '\n\n' +
-    'BRAND SIGNALS (reference at least two in the email body)\n' +
+    'BRAND SIGNALS (reference at least two in the email)\n' +
     signals + '\n\n' +
     'ROLE-SPECIFIC MESSAGE FOCUS\n' +
     'This executives primary concern is: ' + matrix.focus + '\n' +
-    'The most relevant proof points for this role are: ' + matrix.proofPoints + '\n\n' +
+    'Key proof points: ' + matrix.proofPoints + '\n\n' +
     'EMAIL GUIDELINES\n' +
-    'Tone: direct, peer-to-peer, confident but not pushy.\n' +
-    'Length: 4-6 sentences maximum. No bullet points in the email body.\n' +
+    'Tone: formal, professional, and respectful. Address the recipient by their last name.\n' +
+    'Length: 4-6 sentences. No bullet points in the body.\n' +
     'Structure:\n' +
-    '1. One opening sentence referencing something specific and real about the brand\n' +
-    '2. One or two sentences connecting that signal to the roles primary concern\n' +
-    '3. One sentence positioning Atelier as the solution\n' +
-    '4. One clear call to action — a 15-minute call\n\n' +
-    'Signature: sign off as "The Atelier team"\n' +
-    'Subject line: short and specific, reference the brand or signal\n\n' +
+    '1. Formal salutation: "Dear [Title] [Last Name],"\n' +
+    '2. One sentence referencing a specific verifiable fact about the brand\n' +
+    '3. One or two sentences connecting that fact to the executives responsibility\n' +
+    '4. One sentence introducing Atelier\n' +
+    '5. A professional call to action — a brief call at their convenience\n' +
+    '6. Sign off: "Kind regards," then "The Atelier Team"\n\n' +
+    'Subject line: formal and specific.\n\n' +
     'OUTPUT FORMAT\n' +
     'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
     '{ "subject": "string", "body": "string" }'
@@ -70,7 +107,7 @@ function runTrustGate(body: string, dossier: Record<string, unknown>): boolean {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { dossier, role, contact_name } = body
+    const { dossier, role, contact_name, template } = body
 
     if (!dossier || !role || !contact_name) {
       return NextResponse.json(
@@ -79,7 +116,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const prompt = buildEmailPrompt(dossier, role, contact_name)
+    const prompt = buildEmailPrompt(dossier, role, contact_name, template)
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',

@@ -26,11 +26,11 @@ interface Dossier {
 }
 
 const CRITERIA = [
-  { key: 'annual_revenue', label: 'Annual revenue', max: 25, weight: 'high', threshold: '$50M+' },
-  { key: 'retail_distribution', label: 'Retail distribution', max: 15, weight: 'medium', threshold: 'Sephora · Mecca · major ANZ/global retailers' },
-  { key: 'market_presence', label: 'Market presence', max: 15, weight: 'medium', threshold: 'Multi-market (AU + NZ min.)' },
-  { key: 'product_category', label: 'Product category', max: 15, weight: 'low', threshold: 'Beauty, health or wellness' },
-  { key: 'order_viability', label: 'Order viability', max: 30, weight: 'high', threshold: '5,000+ unit capacity signal' },
+  { key: 'annual_revenue', label: 'Annual revenue', max: 35, weight: 'high', threshold: 'AUD $50M+' },
+  { key: 'retail_distribution', label: 'Retail distribution', max: 20, weight: 'high', threshold: 'Prestige retail · Sephora · Mecca · David Jones' },
+  { key: 'order_viability', label: 'Order viability', max: 20, weight: 'high', threshold: 'Doors · funding · NPD hiring · launches' },
+  { key: 'product_category', label: 'Product category fit', max: 15, weight: 'medium', threshold: 'Skincare · haircare · colour · body care' },
+  { key: 'market_presence', label: 'Market presence', max: 10, weight: 'medium', threshold: 'AU + NZ minimum' },
 ]
 
 function BrandLogo({ name, domain }: { name: string; domain: string | null }) {
@@ -62,6 +62,9 @@ function BrandLogo({ name, domain }: { name: string; domain: string | null }) {
 
 export default function DossierPage() {
   const [dossier, setDossier] = useState<Dossier | null>(null)
+  const [leadSource, setLeadSource] = useState<string>('Outbound')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -86,13 +89,54 @@ export default function DossierPage() {
     : 'var(--red-500)'
 
   const revenueShort = dossier.revenue_estimate
-    ? dossier.revenue_estimate.match(/\$[\d,.]+[MB]?[\s–\-~]+\$?[\d,.]+[MB]?|\$[\d,.]+[MB]+/)?.[0]
-      ?? dossier.revenue_estimate.split(' ')[0]
+    ? dossier.revenue_estimate.split('(')[0].split('.')[0].trim()
     : 'Unknown'
 
   const domain = dossier.website
     ? dossier.website.replace('https://', '').replace('http://', '').split('/')[0]
     : null
+
+  function handleProceed() {
+    localStorage.setItem('lead_source', leadSource)
+    router.push('/contacts')
+  }
+
+  function handlePass() {
+    localStorage.setItem('lead_source', leadSource)
+    router.push('/')
+  }
+
+  async function handleSave() {
+    if (!dossier) return
+    setSaving(true)
+    try {
+      await fetch('/api/save-to-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brand_name: dossier.brand_name,
+          website: dossier.website,
+          lead_source: leadSource,
+          revenue_estimate: dossier.revenue_estimate,
+          retailers: dossier.retailers,
+          category: dossier.category,
+          icp_score: dossier.icp_score,
+          score_band: dossier.score_band,
+          signals: dossier.signals,
+          target_role: '',
+          contact_name: '',
+          email_subject: '',
+          email_body: '',
+          status: 'Researched'
+        })
+      })
+      setSaved(true)
+    } catch {
+      console.error('Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div>
@@ -115,9 +159,11 @@ export default function DossierPage() {
           <h1 style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.5px', margin: 0 }}>{dossier.brand_name}</h1>
           <span className={bandClass}>{dossier.score_band}</span>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', width: 220, flexShrink: 0 }}>
           <div className="kv-label">Category</div>
-          <div style={{ fontSize: 14, fontWeight: 500 }}>{dossier.category}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-default)', lineHeight: 1.4 }}>
+            {dossier.category.split(/[,(]/)[0].trim().replace(/\.$/, '')}
+          </div>
         </div>
       </div>
 
@@ -187,23 +233,7 @@ export default function DossierPage() {
         </div>
       </div>
 
-      <div style={{ marginBottom: 20 }}>
-        <div className="section-label">Key Signals</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-          {dossier.signals.map((s, i) => (
-            <div key={i} className="card-hair" style={{ padding: '14px 16px' }}>
-              <div style={{ textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: 11, fontWeight: 500, color: 'var(--slate-400)', marginBottom: 6 }}>
-                {s.type.replace(/_/g, ' ')}
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--text-default)', lineHeight: 1.5 }}>
-                {s.description}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 24 }}>
+      <div className="card" style={{ marginBottom: 20 }}>
         <div className="section-label">Brand Details</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 32 }}>
           <div>
@@ -218,7 +248,9 @@ export default function DossierPage() {
             <div className="kv-label">Retailers</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {dossier.retailers.map((r, i) => (
-                <span key={i} className="tag" style={{ fontSize: 12 }}>{r.name}</span>
+                <span key={i} className="tag" style={{ fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.name.split('(')[0].trim()}
+                </span>
               ))}
             </div>
           </div>
@@ -235,19 +267,75 @@ export default function DossierPage() {
           </div>
           <div>
             <div className="kv-label">SKU Count</div>
-            <div style={{ fontSize: 13, color: 'var(--text-default)' }}>{dossier.sku_count_estimate ?? 'Unknown'}</div>
+            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>
+              {dossier.sku_count_estimate
+                ? dossier.sku_count_estimate.match(/[\d,]+\+?/)?.[0] ?? dossier.sku_count_estimate.split(' ').slice(0, 3).join(' ')
+                : 'Unknown'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>active SKUs</div>
           </div>
         </div>
       </div>
 
+      <div style={{ marginBottom: 20 }}>
+        <div className="section-label">Key Signals</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+          {dossier.signals.map((s, i) => {
+            const bullets = s.description.split(/\.\s+(?=[A-Z])/).filter(b => b.trim().length > 0).slice(0, 3)
+            return (
+              <div key={i} className="card-hair" style={{ padding: '14px 16px' }}>
+                <div style={{ textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: 11, fontWeight: 700, color: 'var(--brand-400)', marginBottom: 8 }}>
+                  {s.type.replace(/_/g, ' ')}
+                </div>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {bullets.map((bullet, j) => (
+                    <li key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--text-default)', lineHeight: 1.4 }}>
+                      <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--slate-400)', flexShrink: 0, marginTop: 6 }} />
+                      <span dangerouslySetInnerHTML={{ __html: bullet.trim().replace(/\.$/, '').replace(/\*\*(.+?)\*\*/g, '<strong style="font-weight:600;color:var(--text-default)">$1</strong>') }} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="card-hair" style={{ padding: '20px 24px', marginBottom: 16 }}>
+        <div className="kv-label" style={{ marginBottom: 12 }}>Lead Source</div>
+        <div className="role-row">
+          {['Outbound', 'Inbound', 'Referral'].map(source => (
+            <button
+              key={source}
+              onClick={() => setLeadSource(source)}
+              className={`role-btn ${leadSource === source ? 'active' : ''}`}
+            >
+              {source}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: 12 }}>
-        <button onClick={() => router.push('/contacts')} className="btn btn-primary" style={{ flex: 1 }}>
+        <button onClick={handleProceed} className="btn btn-primary" style={{ flex: 1 }}>
           Find contacts
         </button>
-        <button onClick={() => router.push('/')} className="btn btn-secondary" style={{ flex: 1 }}>
-          Pass — back to search
+        <button onClick={handleSave} disabled={saving} className="btn btn-secondary" style={{ flex: 1 }}>
+          {saving ? 'Saving...' : 'Save to pipeline'}
+        </button>
+        <button onClick={handlePass} className="btn btn-secondary" style={{ flex: 1 }}>
+          Pass
         </button>
       </div>
+
+      {saved && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--green-400)', fontSize: 13, fontWeight: 500 }}>
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <polyline points="20,6 9,17 4,12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Saved to pipeline as {leadSource}
+        </div>
+      )}
     </div>
   )
 }

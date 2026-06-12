@@ -75,6 +75,27 @@ export async function researchBrand(brandName: string) {
     throw new Error('Claude returned malformed JSON — research failed')
   }
 
+  const maxScores: Record<string, number> = {
+    annual_revenue: 35,
+    retail_distribution: 20,
+    order_viability: 20,
+    product_category: 15,
+    market_presence: 10
+  }
+
+  if (dossier.score_breakdown) {
+    let total = 0
+    for (const key of Object.keys(maxScores)) {
+      dossier.score_breakdown[key] = Math.min(dossier.score_breakdown[key] ?? 0, maxScores[key])
+      total += dossier.score_breakdown[key]
+    }
+    dossier.icp_score = total
+    if (total >= 80) dossier.score_band = 'Hot'
+    else if (total >= 60) dossier.score_band = 'Warm'
+    else if (total >= 40) dossier.score_band = 'Watch'
+    else dossier.score_band = 'Pass'
+  }
+
   db.prepare(`
     INSERT INTO dossiers (brand_name, brand_name_normalised, dossier_json)
     VALUES (?, ?, ?)
@@ -87,64 +108,77 @@ export async function researchBrand(brandName: string) {
 }
 
 function buildResearchPrompt(brandName: string): string {
-  return 'You are a sales intelligence analyst specialising in the ANZ consumer packaged goods (CPG) market. Your job is to research a brand and produce a structured qualification dossier used by a contract manufacturing company to decide whether to pursue outbound outreach.\n\n' +
-    'The company you are researching for is Atelier — an ANZ contract manufacturer serving beauty, health, and wellness brands. Atelier\'s ideal customer is a brand with $50M+ revenue, distribution in major retailers, multi-market presence, and signals of active product development.\n\n' +
-    'Use web search to find the most current and accurate information about this brand. Search for:\n' +
-    '- The brand\'s annual revenue (check recent press, funding announcements, and news articles)\n' +
-    '- Which retailers stock the brand (check Mecca, Sephora AU, David Jones, ADORE Beauty, Coles, Woolworths, Target AU/NZ)\n' +
-    '- Recent news, launches, funding rounds, and expansion announcements\n' +
-    '- The brand\'s market presence and which countries they operate in\n' +
-    '- Job postings and team size signals\n\n' +
+  return 'You are a sales intelligence analyst specialising in the ANZ consumer packaged goods (CPG) market. Your job is to research a brand and produce a structured qualification dossier used by a contract manufacturer to decide whether to pursue outbound outreach.\n\n' +
+    'The company you are researching for is Atelier — an ANZ contract manufacturer specialising in prestige beauty, skincare, haircare, and wellness product manufacturing. Atelier works with prestige and premium brands, not mass market FMCG. Their ideal client is a brand sold through Sephora, Mecca, David Jones, or equivalent prestige retailers globally.\n\n' +
+    'Important: Always express revenue estimates in AUD. If the brand reports in USD or another currency, convert to AUD using an approximate current exchange rate and note the conversion. If you cannot find a credible revenue figure from press, filings, or news — return null for revenue_estimate and "low" for revenue_confidence. Never fabricate or guess a revenue number.\n\n' +
+    'Use web search to find the most current and accurate information. Search for:\n' +
+    '- The brand\'s annual revenue (check recent press, funding announcements, acquisition documents)\n' +
+    '- Which prestige retailers stock the brand — specifically check: Mecca, Sephora AU, Sephora globally, David Jones, ADORE Beauty, Net-a-Porter, Harrods, Selfridges, Space NK\n' +
+    '- Also check mass market: Coles, Woolworths, Target AU/NZ, Chemist Warehouse\n' +
+    '- Recent funding rounds, especially for product development or range expansion\n' +
+    '- LinkedIn job postings in innovation, product development, NPD, formulation, or manufacturing\n' +
+    '- Recent product launches, SKU expansions, and new category entries\n' +
+    '- The brand\'s market presence across ANZ and internationally\n\n' +
     'Brand name: ' + brandName + '\n\n' +
+    'CRITICAL REVENUE INSTRUCTION: You must find a credible, sourced revenue figure for this brand. Search for recent news articles, acquisition filings, parent company annual reports, or analyst estimates. For brands owned by large conglomerates (e.g. MAC is owned by Estee Lauder), check the parent company annual report for divisional revenue. If after searching you still cannot find a verifiable figure with a specific source URL or publication, set revenue_estimate to null and revenue_confidence to "low". A null is always better than a fabricated number. Do not estimate based on store count or speculation.\n\n' +
     '---\n\n' +
     'SCORING RUBRIC\n\n' +
-    'Score the brand across five hard criteria. Each criterion has a maximum score and a weight. Return numeric scores only — do not round up to be generous. If you cannot verify a criterion, score it 0 and flag it.\n\n' +
-    'Hard criteria:\n\n' +
-    '1. Annual Revenue — max 25 points (weight: high)\n' +
-    '   Threshold: $50M+ AUD/NZD annual revenue\n' +
+    'Score the brand across five criteria in order of importance. Do not exceed the maximum for each criterion.\n\n' +
+    '1. Annual Revenue — max 35 points (HIGHEST weight)\n' +
+    '   Always convert to AUD. Threshold: AUD $50M+\n' +
     '   Scoring guide:\n' +
-    '   - $100M+: 25 points\n' +
-    '   - $75M–$99M: 20 points\n' +
-    '   - $50M–$74M: 15 points\n' +
-    '   - $20M–$49M: 8 points (below threshold — flag)\n' +
-    '   - Under $20M or unverifiable: 0 points\n\n' +
-    '2. Retail Distribution — max 15 points (weight: medium)\n' +
-    '   Threshold: stocked at Sephora, Mecca, or major ANZ/global retailers\n' +
+    '   - AUD $200M+: 35 points\n' +
+    '   - AUD $100M–$199M: 28 points\n' +
+    '   - AUD $50M–$99M: 21 points\n' +
+    '   - AUD $20M–$49M: 10 points (below threshold — flag)\n' +
+    '   - Under AUD $20M or unverifiable: 0 points\n\n' +
+    '   Important: If revenue cannot be verified from a credible source (press release, acquisition filing, news coverage, or analyst estimate), return revenue_estimate as null and revenue_confidence as "low". Never guess or fabricate a revenue figure. A null revenue with low confidence is better than an inaccurate number.\n\n' +
+    '2. Retail Distribution — max 20 points (SECOND highest weight)\n' +
+    '   Atelier serves prestige beauty brands. Prestige retail is the strongest signal. Mass market retail scores lower.\n' +
     '   Scoring guide:\n' +
-    '   - 3+ qualifying retailers (including global): 15 points\n' +
-    '   - 2 qualifying retailers: 10 points\n' +
-    '   - 1 qualifying retailer: 5 points\n' +
-    '   - No qualifying retailers found: 0 points (flag)\n\n' +
-    '3. Market Presence — max 15 points (weight: medium)\n' +
+    '   - Prestige retail (Sephora, Mecca, David Jones, Net-a-Porter, Harrods, Selfridges, Space NK) across 3+ retailers or globally: 20 points\n' +
+    '   - Prestige retail across 2 retailers or strong single prestige retailer (e.g. Mecca nationally + online): 14 points\n' +
+    '   - Single prestige retailer with limited doors OR mass market only (Coles, Woolworths, Chemist Warehouse, Target): 7 points\n' +
+    '   - DTC only or no confirmed retail presence: 0 points\n\n' +
+    '3. Order Viability — max 20 points (SECOND highest weight)\n' +
+    '   Assesses whether this brand is likely to need significant manufacturing runs. Consider all signals together.\n\n' +
+    '   Retail door count and brand scale (up to 8 points):\n' +
+    '   - Stocked in 3+ prestige retailers globally with strong door count: 8 points\n' +
+    '   - Stocked in 2 prestige retailers or strong single retailer nationally: 5 points\n' +
+    '   - Limited retail presence or DTC: 2 points\n' +
+    '   - No retail presence: 0 points\n\n' +
+    '   Funding and investment signals (up to 7 points):\n' +
+    '   - Recent funding (AUD $100M+) for product development or range expansion: 7 points\n' +
+    '   - Recent funding (AUD $10M–$99M) or acquisition with growth mandate: 4 points\n' +
+    '   - Bootstrapped but strong revenue signals: 2 points\n' +
+    '   - No funding signals: 0 points\n\n' +
+    '   Product development and innovation signals (up to 5 points):\n' +
+    '   - Active LinkedIn hiring in NPD, innovation, formulation, or product development roles: 3 points\n' +
+    '   - 3+ new product launches in last 12 months: 2 points\n\n' +
+    '4. Product Category Fit — max 15 points (THIRD weight)\n' +
+    '   Atelier\'s core manufacturing capabilities: skincare (face + body), haircare, colour cosmetics, wellness supplements, personal care.\n' +
+    '   Scoring guide:\n' +
+    '   - Core fit: skincare, haircare, colour cosmetics, or body care: 15 points\n' +
+    '   - Good fit: wellness supplements, personal care, or fragrance: 10 points\n' +
+    '   - Partial fit: adjacent health/wellness Atelier could manufacture: 5 points\n' +
+    '   - Poor fit: food, beverage, apparel, or non-Atelier category: 0 points\n\n' +
+    '5. Market Presence — max 10 points (LOWEST weight)\n' +
     '   Threshold: operating in AU + NZ minimum\n' +
     '   Scoring guide:\n' +
-    '   - AU + NZ + at least one international market: 15 points\n' +
-    '   - AU + NZ only: 10 points\n' +
-    '   - AU only: 5 points\n' +
+    '   - AU + NZ + 2+ international markets: 10 points\n' +
+    '   - AU + NZ only: 7 points\n' +
+    '   - AU only: 4 points\n' +
     '   - No ANZ presence confirmed: 0 points (flag)\n\n' +
-    '4. Product Category — max 15 points (weight: low)\n' +
-    '   Threshold: beauty, health, or wellness\n' +
-    '   Scoring guide:\n' +
-    '   - Core beauty/health/wellness: 15 points\n' +
-    '   - Adjacent category: 8 points\n' +
-    '   - Outside category: 0 points (flag)\n\n' +
-    '5. Order Viability — max 30 points (weight: high)\n' +
-    '   Threshold: signals of 5,000+ unit capacity\n' +
-    '   Scoring guide:\n' +
-    '   - Strong signals (10+ SKUs, 50+ employees, or explicit manufacturing mentions): 30 points\n' +
-    '   - Moderate signals (5–9 SKUs or 20–49 employees): 20 points\n' +
-    '   - Weak signals: 8 points\n' +
-    '   - No signals found: 0 points\n\n' +
     'Total ICP score: sum of all five criteria (max 100).\n' +
     'Score bands: 80–100 Hot, 60–79 Warm, 40–59 Watch, 0–39 Pass\n\n' +
     '---\n\n' +
     'QUALIFYING SIGNALS\n\n' +
-    'Identify any of the following if verifiable with a source:\n' +
-    '- Recent funding ($100M+ round)\n' +
-    '- SKU count / portfolio breadth\n' +
-    '- Recent news: product launches, acquisitions, market expansion\n' +
-    '- Job postings in product development, manufacturing, or supply chain\n' +
-    '- Recent range reviews or new listings at key ANZ retailers\n' +
+    'Identify any of the following if verifiable. Use **double asterisks** around key facts, numbers, retailer names, and metrics:\n' +
+    '- Recent funding or acquisition (include amount in AUD and stated purpose)\n' +
+    '- SKU count and recent launches\n' +
+    '- LinkedIn job postings in product development, NPD, innovation, formulation, or manufacturing\n' +
+    '- Retail door count and key prestige retailers\n' +
+    '- Market expansion announcements\n' +
     '- No existing contract manufacturer (inferred)\n\n' +
     '---\n\n' +
     'OUTPUT REQUIREMENTS\n\n' +
@@ -159,7 +193,7 @@ function buildResearchPrompt(brandName: string): string {
     '  "markets": ["string"],\n' +
     '  "category": "string",\n' +
     '  "sku_count_estimate": "string | null",\n' +
-    '  "signals": [{ "type": "string", "description": "string", "source": "string" }],\n' +
+    '  "signals": [{ "type": "string", "description": "string (use **double asterisks** around key facts, numbers, retailer names, and metrics)", "source": "string" }],\n' +
     '  "icp_score": number,\n' +
     '  "score_breakdown": {\n' +
     '    "annual_revenue": number,\n' +

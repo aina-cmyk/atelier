@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     })
 
     const body = await request.json()
-    const { to, subject, emailBody, contactName } = body
+    const { to, subject, emailBody, contactName, leadSource } = body
 
     if (!to || !subject || !emailBody) {
       return NextResponse.json(
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({
             brand_name: dossier.brand_name,
             website: dossier.website,
-            lead_source: 'Outbound',
+            lead_source: leadSource ?? 'Outbound',
             revenue_estimate: dossier.revenue_estimate,
             retailers: dossier.retailers,
             category: dossier.category,
@@ -88,6 +88,17 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error('Sheets sync failed:', e)
       }
+    }
+
+    try {
+      const { getDb } = await import('@/lib/db')
+      const db = getDb()
+      db.prepare(`
+        INSERT INTO contact_history (brand_name, contact_role, contact_name, contact_email)
+        VALUES (?, ?, ?, ?)
+      `).run(body.dossier?.brand_name ?? '', body.role ?? '', contactName, to)
+    } catch (e) {
+      console.error('Failed to log contact history:', e)
     }
 
     return NextResponse.json({
