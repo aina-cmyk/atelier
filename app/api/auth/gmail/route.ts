@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { google } from 'googleapis'
 
-const REDIRECT_URI = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}/api/auth/callback`
+const REDIRECT_URI = process.env.PRODUCTION_URL
+  ? `${process.env.PRODUCTION_URL}/api/auth/callback`
   : 'http://localhost:3000/api/auth/callback'
 
 export async function GET() {
