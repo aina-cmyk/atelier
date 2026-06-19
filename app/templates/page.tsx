@@ -32,7 +32,10 @@ export default function TemplatesPage() {
   const [newSubject, setNewSubject] = useState('')
   const [newBody, setNewBody] = useState('')
 
-  useEffect(() => { fetchTemplates() }, [])
+  useEffect(() => {
+    document.title = 'Templates — Atelier'
+    fetchTemplates()
+  }, [])
 
   async function fetchTemplates() {
     try {

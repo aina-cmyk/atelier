@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
       contact_name,
       email_subject,
       email_body,
-      status
+      status,
+      sent_by
     } = body
 
     const serviceAccountRaw = process.env.GOOGLE_SERVICE_ACCOUNT
@@ -60,12 +61,14 @@ export async function POST(request: NextRequest) {
       email_subject ?? '',
       email_body ?? '',
       new Date().toLocaleDateString('en-AU'),
-      status ?? 'Sent'
+      status ?? 'Sent',
+      '',
+      sent_by ?? ''
     ]
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Sheet1!A:O',
+      range: 'Sheet1!A:P',
       valueInputOption: 'RAW',
       requestBody: { values: [row] }
     })

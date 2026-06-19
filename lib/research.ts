@@ -27,7 +27,8 @@ export async function researchBrand(brandName: string) {
     tools: [
       {
         type: 'web_search_20250305',
-        name: 'web_search'
+        name: 'web_search',
+        max_uses: 5
       } as Parameters<typeof client.messages.create>[0]['tools'] extends Array<infer T> ? T : never
     ],
     messages: [{ role: 'user', content: prompt }]
@@ -95,61 +96,18 @@ export async function researchBrand(brandName: string) {
 }
 
 function buildResearchPrompt(brandName: string): string {
-  return 'You are a sales intelligence analyst specialising in the ANZ consumer packaged goods (CPG) market. Your job is to research a brand and produce a structured qualification dossier used by a contract manufacturer to decide whether to pursue outbound outreach.\n\n' +
-    'The company you are researching for is Atelier — an ANZ contract manufacturer specialising in prestige beauty, skincare, haircare, and wellness product manufacturing. Atelier works with prestige and premium brands, not mass market FMCG. Their ideal client is a brand sold through Sephora, Mecca, David Jones, or equivalent prestige retailers globally.\n\n' +
-    'Important: Always express revenue estimates in AUD. If the brand reports in USD or another currency, convert to AUD using an approximate current exchange rate and note the conversion. If you cannot find a credible revenue figure from press, filings, or news — return null for revenue_estimate and "low" for revenue_confidence. Never fabricate or guess a revenue number.\n\n' +
-    'CRITICAL REVENUE INSTRUCTION: You must find a credible, sourced revenue figure for this brand. Search for recent news articles, acquisition filings, parent company annual reports, or analyst estimates. For brands owned by large conglomerates, check the parent company annual report for divisional revenue. If after searching you still cannot find a verifiable figure, set revenue_estimate to null and revenue_confidence to "low".\n\n' +
-    'Use web search to find the most current and accurate information. Search for:\n' +
-    '- The brand\'s annual revenue\n' +
-    '- Which prestige retailers stock the brand — specifically: Mecca, Sephora AU, Sephora globally, David Jones, ADORE Beauty, Net-a-Porter, Harrods, Selfridges, Space NK\n' +
-    '- Also check: Coles, Woolworths, Target AU/NZ, Chemist Warehouse\n' +
-    '- Recent funding rounds\n' +
-    '- LinkedIn job postings in NPD, innovation, formulation\n' +
-    '- Recent product launches and SKU expansions\n' +
-    '- Market presence across ANZ and internationally\n\n' +
-    'Brand name: ' + brandName + '\n\n' +
-    '---\n\n' +
-    'SCORING RUBRIC\n\n' +
-    '1. Annual Revenue — max 35 points\n' +
-    '   - AUD $200M+: 35 | $100M–$199M: 28 | $50M–$99M: 21 | $20M–$49M: 10 | Under $20M: 0\n\n' +
-    '2. Retail Distribution — max 20 points\n' +
-    '   - 3+ prestige retailers globally: 20 | 2 prestige retailers: 14 | 1 prestige retailer or mass market only: 7 | DTC only: 0\n\n' +
-    '3. Order Viability — max 20 points\n' +
-    '   - Door count (8pts) + Funding signals (7pts) + NPD hiring/launches (5pts)\n\n' +
-    '4. Product Category Fit — max 15 points\n' +
-    '   - Core (skincare/haircare/colour/body): 15 | Good (wellness/fragrance): 10 | Partial: 5 | Poor: 0\n\n' +
-    '5. Market Presence — max 10 points\n' +
-    '   - AU+NZ+2 international: 10 | AU+NZ: 7 | AU only: 4 | No ANZ: 0\n\n' +
-    'Score bands: 80–100 Hot, 60–79 Warm, 40–59 Watch, 0–39 Pass\n\n' +
-    '---\n\n' +
-    'OUTPUT: Valid JSON only. No preamble, no markdown fences.\n\n' +
-    '{\n' +
-    '  "brand_name": "string",\n' +
-    '  "website": "string | null",\n' +
-    '  "revenue_estimate": "string | null",\n' +
-    '  "revenue_confidence": "high | medium | low",\n' +
-    '  "revenue_source": "string | null",\n' +
-    '  "retailers": [{ "name": "string", "confidence": "high | medium | low", "source": "string" }],\n' +
-    '  "markets": ["string"],\n' +
-    '  "category": "string",\n' +
-    '  "sku_count_estimate": "string | null",\n' +
-    '  "signals": [{ "type": "string", "description": "string (use **double asterisks** around key facts)", "source": "string" }],\n' +
-    '  "icp_score": number,\n' +
-    '  "score_breakdown": {\n' +
-    '    "annual_revenue": number,\n' +
-    '    "retail_distribution": number,\n' +
-    '    "market_presence": number,\n' +
-    '    "product_category": number,\n' +
-    '    "order_viability": number\n' +
-    '  },\n' +
-    '  "score_explanations": {\n' +
-    '    "annual_revenue": "string",\n' +
-    '    "retail_distribution": "string",\n' +
-    '    "market_presence": "string",\n' +
-    '    "product_category": "string",\n' +
-    '    "order_viability": "string"\n' +
-    '  },\n' +
-    '  "score_band": "Hot | Warm | Watch | Pass",\n' +
-    '  "data_quality": "sufficient | insufficient"\n' +
-    '}'
+  return 'You are a sales intelligence analyst for Atelier, an ANZ contract manufacturer for prestige beauty, skincare, haircare and wellness brands.\n\n' +
+    'Research this brand and return a qualification dossier. Use web search to find current data.\n\n' +
+    'Brand: ' + brandName + '\n\n' +
+    'Search for: revenue, prestige retailers (Mecca, Sephora, David Jones, Net-a-Porter), funding, NPD hiring, recent launches, ANZ market presence, 2-3 direct competitor brands, and any celebrity/influencer/model founders or backers.\n\n' +
+    'Only include retailers with direct evidence. Convert all revenue to AUD. If revenue unverifiable, return null.\n\n' +
+    'SCORING (max points):\n' +
+    '1. Annual Revenue (35): $200M+=35, $100-199M=28, $50-99M=21, $20-49M=10, under $20M=0\n' +
+    '2. Retail Distribution (20): 3+ prestige retailers globally=20, 2 prestige retailers=14, 1 prestige retailer or strong mass market presence=7, DTC only or no confirmed retail=0. Prestige retailers include: Sephora, Mecca, Ulta, Net-a-Porter, Harrods, Selfridges, Space NK, David Jones, ADORE Beauty, Revolve, Nordstrom. Mass market retailers (Chemist Warehouse, Coles, Target) count as partial fit.\n' +
+    '3. Order Viability (20): doors(8) + funding signals(7) + NPD/launches(5). Celebrity or influencer-founded brands with retail traction should score high on order viability.\n' +
+    '4. Product Category (15): skincare/haircare/colour/body=15, wellness/fragrance=10, adjacent=5, other=0\n' +
+    '5. Market Presence (10): Present in 4+ international markets=10, present in 2-3 international markets=7, present in 1 international market=4, domestic only or no confirmed presence=0\n\n' +
+    'Bands: 80-100 Hot, 60-79 Warm, 40-59 Watch, 0-39 Pass\n\n' +
+    'Return valid JSON only, no preamble:\n' +
+    '{"brand_name":"string","website":"string|null","revenue_estimate":"string|null","revenue_confidence":"high|medium|low","revenue_source":"string|null","retailers":[{"name":"string","confidence":"high|medium|low","source":"string"}],"markets":["string"],"category":"string","sku_count_estimate":"string|null","signals":[{"type":"string","description":"string (use **asterisks** around key facts)","source":"string"}],"icp_score":number,"score_breakdown":{"annual_revenue":number,"retail_distribution":number,"market_presence":number,"product_category":number,"order_viability":number},"score_explanations":{"annual_revenue":"string","retail_distribution":"string","market_presence":"string","product_category":"string","order_viability":"string"},"score_band":"Hot|Warm|Watch|Pass","data_quality":"sufficient|insufficient","competitors":["string (2-3 direct competitor brand names)"]}'
 }

@@ -21,7 +21,7 @@ export async function GET() {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Sheet1!A:O'
+      range: 'Sheet1!A:Q'
     })
 
     const rows = response.data.values ?? []
@@ -45,7 +45,8 @@ export async function GET() {
       email_subject: row[11] ?? '',
       email_body: row[12] ?? '',
       date_added: row[13] ?? '',
-      status: row[14] ?? ''
+      status: row[14] ?? '',
+      sent_by: row[16] ?? ''
     }))
 
     return NextResponse.json({ success: true, leads: leads.reverse() })

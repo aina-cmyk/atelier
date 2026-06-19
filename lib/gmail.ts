@@ -1,0 +1,61 @@
+const REDIRECT_URI = process.env.PRODUCTION_URL
+  ? `${process.env.PRODUCTION_URL}/api/auth/callback`
+  : 'http://localhost:3000/api/auth/callback'
+
+export function makeEmailRaw(to: string, subject: string, body: string, cc?: string, bcc?: string): string {
+  const ccAddr = cc ? cc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
+  const bccAddr = bcc ? bcc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
+  const encSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`
+  const headers = [
+    `To: ${to}`,
+    ...(ccAddr ? [`Cc: ${ccAddr}`] : []),
+    ...(bccAddr ? [`Bcc: ${bccAddr}`] : []),
+    `Subject: ${encSubject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: quoted-printable',
+    '',
+    body,
+  ]
+  return Buffer.from(headers.join('\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+export async function refreshGmailToken(refreshToken: string): Promise<string | null> {
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.GMAIL_CLIENT_ID ?? '',
+        client_secret: process.env.GMAIL_CLIENT_SECRET ?? '',
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return (data.access_token as string) ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function sendViaGmail(accessToken: string, raw: string): Promise<string> {
+  const { google } = await import('googleapis')
+  const oauth2 = new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    REDIRECT_URI
+  )
+  oauth2.setCredentials({ access_token: accessToken })
+  const gmail = google.gmail({ version: 'v1', auth: oauth2 })
+  const result = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } })
+  return result.data.id!
+}
+
+export function isGmailAuthError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message.includes('invalid_grant') ||
+    error.message.includes('Invalid Credentials') ||
+    error.message.includes('401')
+  )
+}

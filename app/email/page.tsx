@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface Contact {
@@ -10,6 +10,8 @@ interface Contact {
   phone?: string
   verified?: boolean
   placeholder?: boolean
+  contactId?: string
+  linkedin?: string
 }
 
 interface Dossier {
@@ -28,6 +30,33 @@ interface Template {
   role: string
   subject: string
   body: string
+}
+
+interface TabSnapshot {
+  id: string
+  dossier: Dossier | null
+  contact: Contact | null
+  selectedRole: string
+  email: Email | null
+  loading: boolean
+  warning: string
+  error: string
+  trustGatePassed: boolean | null
+  sent: boolean
+  needsAuth: boolean
+  toEmail: string
+  ccEmail: string
+  bccEmail: string
+  showCc: boolean
+  showBcc: boolean
+  activeTemplate: { subject: string; body: string } | null
+  followUpContext: {original_subject?: string; contact_name?: string; date_sent?: string} | null
+  selectedBullet: string
+  outreachTiming: {recommended_day: string; recommended_date: string; day_reason: string; urgency: string; urgency_reason: string; signal_context: string | null; within_hours: number | null} | null
+  pitchAngles: Record<string, string[]>
+  pitchRoles: string[]
+  recommendedRole: string
+  selectedPitchRole: string
 }
 
 export default function EmailPage() {
@@ -50,34 +79,332 @@ export default function EmailPage() {
   const [showContactDropdown, setShowContactDropdown] = useState(false)
   const [loadingContacts, setLoadingContacts] = useState(false)
   const [contactHistory, setContactHistory] = useState<{contact_role: string; sent_at: string}[]>([])
+  const [userName, setUserName] = useState('')
+  const [userEmail, setUserEmail] = useState('')
+  const [ccEmail, setCcEmail] = useState('')
+  const [bccEmail, setBccEmail] = useState('')
+  const [toEmail, setToEmail] = useState('')
+  const [showCc, setShowCc] = useState(false)
+  const [showBcc, setShowBcc] = useState(false)
+  const [pitchAngles, setPitchAngles] = useState<Record<string, string[]>>({})
+  const [pitchRoles, setPitchRoles] = useState<string[]>(['CEO', 'CMO', 'Head of NPD'])
+  const [recommendedRole, setRecommendedRole] = useState<string>('')
+  const [loadingPitch, setLoadingPitch] = useState(false)
+  const [selectedPitchRole, setSelectedPitchRole] = useState('CEO')
+  const [showPitch, setShowPitch] = useState(false)
+  const [followUpContext, setFollowUpContext] = useState<{original_subject?: string; contact_name?: string; date_sent?: string} | null>(null)
+  const [outreachTiming, setOutreachTiming] = useState<{recommended_day: string; recommended_date: string; day_reason: string; urgency: string; urgency_reason: string; signal_context: string | null; within_hours: number | null} | null>(null)
+  const [showTimingDetail, setShowTimingDetail] = useState(false)
+  const [selectedBullet, setSelectedBullet] = useState<string>('')
+  const [copied, setCopied] = useState(false)
+  const [hasCopied, setHasCopied] = useState(false)
+  const [linkedInSending, setLinkedInSending] = useState(false)
+  const [linkedInSent, setLinkedInSent] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [scheduledAt, setScheduledAt] = useState('')
+  const [scheduleTimezone, setScheduleTimezone] = useState('Australia/Sydney')
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduledTabIds, setScheduledTabIds] = useState<Set<string>>(new Set())
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const pitchRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const [checked, setChecked] = useState(false)
+  const [revealingContact, setRevealingContact] = useState<string | null>(null)
+  const [tabIds, setTabIds] = useState<string[]>(['tab-0'])
+  const [activeTabId, setActiveTabId] = useState<string>('tab-0')
+  const activeTabIdRef = useRef<string>('tab-0')
+  const tabCounterRef = useRef<number>(0)
+  const pendingGenerateRef = useRef<{ role: string; explicitDossier: Dossier; explicitContactName: string } | null>(null)
+  // Snapshots live in a ref (not state) so reads/writes are always synchronous and
+  // never stale regardless of React's batching behaviour.
+  const tabDataRef = useRef<Map<string, TabSnapshot>>(new Map())
+  const tabsRestoredRef = useRef(false)
+  const pendingContactForTabRef = useRef<Contact | null>(null)
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const pendingSelectionRef = useRef<[number, number] | null>(null)
+
+  function getTabLabel(id: string): string {
+    if (id === activeTabId) {
+      if (!dossier) return 'New Email'
+      const brand = dossier.brand_name as string
+      if (contact?.name) return `${brand} · ${contact.name.split(' ')[0]}`
+      return brand
+    }
+    const snap = tabDataRef.current.get(id)
+    if (!snap?.dossier) return 'New Email'
+    const brand = snap.dossier.brand_name as string
+    if (snap.contact?.name) return `${brand} · ${snap.contact.name.split(' ')[0]}`
+    return brand
+  }
+
+  function saveCurrentTab(): void {
+    tabDataRef.current.set(activeTabIdRef.current, {
+      id: activeTabIdRef.current, dossier, contact, selectedRole, email, loading, warning, error,
+      trustGatePassed, sent, needsAuth, toEmail, ccEmail, bccEmail, showCc, showBcc,
+      activeTemplate, followUpContext, selectedBullet, outreachTiming,
+      pitchAngles, pitchRoles, recommendedRole, selectedPitchRole
+    })
+  }
+
+  function applyTabSnapshot(snap: TabSnapshot): void {
+    setDossier(snap.dossier)
+    setContact(snap.contact)
+    setSelectedRole(snap.selectedRole)
+    setEmail(snap.email)
+    setLoading(snap.loading)
+    setWarning(snap.warning)
+    setError(snap.error)
+    setTrustGatePassed(snap.trustGatePassed)
+    setSent(snap.sent)
+    setNeedsAuth(snap.needsAuth)
+    setToEmail(snap.toEmail)
+    setCcEmail(snap.ccEmail)
+    setBccEmail(snap.bccEmail)
+    setShowCc(snap.showCc)
+    setShowBcc(snap.showBcc)
+    setActiveTemplate(snap.activeTemplate)
+    setFollowUpContext(snap.followUpContext)
+    setSelectedBullet(snap.selectedBullet)
+    setOutreachTiming(snap.outreachTiming)
+    setPitchAngles(snap.pitchAngles)
+    setPitchRoles(snap.pitchRoles)
+    setRecommendedRole(snap.recommendedRole)
+    setSelectedPitchRole(snap.selectedPitchRole)
+    setShowModal(false)
+    setShowTemplates(false)
+    setShowContactDropdown(false)
+    setShowPitch(false)
+    setShowTimingDetail(false)
+    setAllContacts([])
+    setContactHistory([])
+    setLoadingContacts(false)
+    setLoadingPitch(false)
+    setCopied(false)
+    setHasCopied(false)
+    setLinkedInSent(false)
+    setLinkedInSending(false)
+  }
+
+  function switchTab(id: string): void {
+    if (id === activeTabIdRef.current) return
+    saveCurrentTab()
+    const target = tabDataRef.current.get(id)
+    if (target) applyTabSnapshot(target)
+    activeTabIdRef.current = id
+    setActiveTabId(id)
+  }
+
+  function addTab(): void {
+    const newId = `tab-${++tabCounterRef.current}`
+    saveCurrentTab()
+    const newSnap: TabSnapshot = {
+      id: newId, dossier, contact: null, selectedRole: 'CEO',
+      email: null, loading: false, warning: '', error: '',
+      trustGatePassed: null, sent: false, needsAuth: false,
+      toEmail: '', ccEmail: '', bccEmail: '', showCc: false, showBcc: false,
+      activeTemplate: null, followUpContext: null, selectedBullet: '',
+      outreachTiming, pitchAngles: {}, pitchRoles: ['CEO', 'CMO', 'Head of NPD'],
+      recommendedRole: '', selectedPitchRole: 'CEO'
+    }
+    tabDataRef.current.set(newId, newSnap)
+    applyTabSnapshot(newSnap)
+    activeTabIdRef.current = newId
+    setTabIds(prev => [...prev, newId])
+    setActiveTabId(newId)
+    pendingGenerateRef.current = { role: 'CEO', explicitDossier: dossier!, explicitContactName: '' }
+  }
+
+  function addTabForContact(c: Contact): void {
+    const newId = `tab-${++tabCounterRef.current}`
+    saveCurrentTab()
+    const newSnap: TabSnapshot = {
+      id: newId, dossier, contact: c, selectedRole: c.role,
+      email: null, loading: false, warning: '', error: '',
+      trustGatePassed: null, sent: false, needsAuth: false,
+      toEmail: c.email ?? '', ccEmail: '', bccEmail: '', showCc: false, showBcc: false,
+      activeTemplate: null, followUpContext: null, selectedBullet: '',
+      outreachTiming, pitchAngles: {}, pitchRoles: ['CEO', 'CMO', 'Head of NPD'],
+      recommendedRole: '', selectedPitchRole: c.role
+    }
+    tabDataRef.current.set(newId, newSnap)
+    applyTabSnapshot(newSnap)
+    activeTabIdRef.current = newId
+    setTabIds(prev => [...prev, newId])
+    setActiveTabId(newId)
+    pendingGenerateRef.current = { role: c.role, explicitDossier: dossier!, explicitContactName: c.name }
+  }
+
+  function closeTab(id: string): void {
+    if (tabIds.length <= 1) return
+    if (id === activeTabIdRef.current) {
+      const idx = tabIds.indexOf(id)
+      const nextId = tabIds[idx + 1] ?? tabIds[idx - 1]
+      if (nextId) {
+        const target = tabDataRef.current.get(nextId)
+        if (target) applyTabSnapshot(target)
+        activeTabIdRef.current = nextId
+        setActiveTabId(nextId)
+      }
+    }
+    tabDataRef.current.delete(id)
+    setTabIds(prev => prev.filter(tid => tid !== id))
+  }
 
   useEffect(() => {
     const storedDossier = localStorage.getItem('current_dossier')
     const storedContact = localStorage.getItem('selected_contact')
     const storedTemplate = localStorage.getItem('email_template')
-    if (!storedDossier) { router.push('/'); return }
-    setDossier(JSON.parse(storedDossier))
-    if (storedContact) {
-      const c = JSON.parse(storedContact)
-      setContact(c)
-      setSelectedRole(c.role)
+    if (!storedDossier) { setChecked(true); return }
+    const parsedDossier: Dossier = JSON.parse(storedDossier)
+    document.title = `Email — ${parsedDossier.brand_name} — Atelier`
+
+    fetch('/api/me').then(r => r.json()).then(data => {
+      if (data.user) {
+        setUserName(data.user.name)
+        setUserEmail(data.user.email)
+        localStorage.setItem('atelier_user_name', data.user.name)
+      }
+    })
+    const lastContacted = localStorage.getItem('last_contacted_date') ?? undefined
+    fetch('/api/outreach-timing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dossier: parsedDossier, last_contacted: lastContacted })
+    }).then(r => r.json()).then(data => {
+      if (data.success) setOutreachTiming(data.timing)
+    }).catch(() => {})
+
+    // Try to restore persisted tabs for the same brand
+    let didRestore = false
+    try {
+      const storedEmailTabs = localStorage.getItem('email_tabs')
+      if (storedEmailTabs) {
+        const persisted = JSON.parse(storedEmailTabs)
+        if (
+          persisted.brandName === (parsedDossier.brand_name as string) &&
+          Array.isArray(persisted.tabs) && persisted.tabs.length > 0
+        ) {
+          const tabs: TabSnapshot[] = (persisted.tabs as TabSnapshot[]).map(t => ({ ...t, loading: false }))
+          tabs.forEach(t => tabDataRef.current.set(t.id, t))
+          setTabIds(tabs.map(t => t.id))
+          tabCounterRef.current = Math.max(0, ...tabs.map(t => {
+            const n = parseInt((t.id || '').split('-')[1] || '0')
+            return isNaN(n) ? 0 : n
+          }))
+          const activeSnap = tabs.find(t => t.id === persisted.activeTabId) ?? tabs[tabs.length - 1]
+          applyTabSnapshot(activeSnap)
+          activeTabIdRef.current = activeSnap.id
+          setActiveTabId(activeSnap.id)
+          // If the restored tab already has a generated email, skip re-generation
+          if (activeSnap.email) tabsRestoredRef.current = true
+          didRestore = true
+        }
+      }
+    } catch {}
+
+    if (!didRestore) {
+      // Fresh start — normal setup
+      setDossier(parsedDossier)
+      setPitchAngles({})
+      setPitchRoles(['CEO', 'CMO', 'Head of NPD'])
+      setRecommendedRole('')
+      setSelectedPitchRole('CEO')
+      if (storedContact) {
+        const c = JSON.parse(storedContact)
+        setContact(c)
+        setSelectedRole(c.role)
+        setToEmail(c.email ?? '')
+      }
+    } else if (storedContact) {
+      // Tabs restored + new contact selected — add as a new tab after render
+      pendingContactForTabRef.current = JSON.parse(storedContact)
     }
+
     if (storedTemplate) {
       setActiveTemplate(JSON.parse(storedTemplate))
       localStorage.removeItem('email_template')
     }
+    const followUpContext = localStorage.getItem('follow_up_context')
+    if (followUpContext) {
+      setFollowUpContext(JSON.parse(followUpContext))
+      localStorage.removeItem('follow_up_context')
+    }
+    const pitchBullet = localStorage.getItem('pitch_bullet')
+    if (pitchBullet) {
+      setSelectedBullet(pitchBullet)
+      localStorage.removeItem('pitch_bullet')
+    }
+
+    setChecked(true)
   }, [router])
 
   useEffect(() => {
-    if (dossier) generateEmail(selectedRole)
+    if (!dossier) return
+    if (tabsRestoredRef.current) { tabsRestoredRef.current = false; return }
+    generateEmail(selectedRole)
   }, [dossier])
+
+  useEffect(() => {
+    if (pendingGenerateRef.current) {
+      const { role, explicitDossier, explicitContactName } = pendingGenerateRef.current
+      pendingGenerateRef.current = null
+      generateEmail(role, undefined, undefined, { dossier: explicitDossier, contactName: explicitContactName })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId])
+
+  // After restore: if a new contact was selected from the contacts page, open it as a new tab
+  useEffect(() => {
+    if (!checked || !dossier || !pendingContactForTabRef.current) return
+    const c = pendingContactForTabRef.current
+    pendingContactForTabRef.current = null
+    addTabForContact(c)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checked, dossier])
+
+  // Persist open tabs to localStorage so they survive navigation away and back
+  useEffect(() => {
+    if (!checked || !dossier) return
+    tabDataRef.current.set(activeTabIdRef.current, {
+      id: activeTabIdRef.current,
+      dossier, contact, selectedRole, email,
+      loading: false, warning, error,
+      trustGatePassed, sent, needsAuth,
+      toEmail, ccEmail, bccEmail, showCc, showBcc,
+      activeTemplate, followUpContext, selectedBullet, outreachTiming,
+      pitchAngles, pitchRoles, recommendedRole, selectedPitchRole,
+    })
+    const allSnaps = tabIds
+      .map(id => tabDataRef.current.get(id))
+      .filter((s): s is TabSnapshot => s != null)
+    try {
+      localStorage.setItem('email_tabs', JSON.stringify({
+        brandName: dossier.brand_name as string,
+        activeTabId: activeTabIdRef.current,
+        tabs: allSnaps,
+      }))
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, tabIds, activeTabId])
+
+  // Restore textarea cursor position after React commits the new email body to DOM.
+  // requestAnimationFrame is unreliable in concurrent mode — useLayoutEffect fires
+  // synchronously after commit, before the browser paints.
+  useLayoutEffect(() => {
+    if (pendingSelectionRef.current && bodyTextareaRef.current) {
+      const [s, e] = pendingSelectionRef.current
+      bodyTextareaRef.current.setSelectionRange(s, e)
+      pendingSelectionRef.current = null
+    }
+  }, [email?.body])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowContactDropdown(false)
+      }
+      if (pitchRef.current && !pitchRef.current.contains(e.target as Node)) {
+        setShowPitch(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -92,7 +419,7 @@ export default function EmailPage() {
         fetch('/api/lookup-contacts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             brand_name: dossier.brand_name,
             domain: (dossier as {website?: string}).website ?? ''
           })
@@ -120,29 +447,76 @@ export default function EmailPage() {
     }
   }
 
-  async function generateEmail(role: string, template?: { subject: string; body: string }) {
-    if (!dossier) return
+  async function fetchPitchAngles() {
+    if (!dossier || loadingPitch || Object.keys(pitchAngles).length > 0) return
+    setLoadingPitch(true)
+    try {
+      const res = await fetch('/api/pitch-angle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dossier })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setPitchAngles(data.pitchAngles)
+        setPitchRoles(data.roles)
+        setRecommendedRole(data.recommended)
+        setSelectedPitchRole(data.recommended ?? data.roles[0])
+      }
+    } catch {
+      console.error('Failed to fetch pitch angles')
+    } finally {
+      setLoadingPitch(false)
+    }
+  }
+
+  async function generateEmail(
+    role: string,
+    template?: { subject: string; body: string },
+    bullet?: string,
+    explicit?: { dossier: Dossier; contactName: string }
+  ) {
+    const activeDossier = explicit?.dossier ?? dossier
+    if (!activeDossier) return
+    const tabId = activeTabIdRef.current
     setLoading(true)
     setWarning('')
     setError('')
     setEmail(null)
     setTrustGatePassed(null)
 
-    const contactName = contact?.name ?? 'there'
+    const contactName = explicit
+      ? (explicit.contactName || 'there')
+      : (contact?.name ?? 'there')
 
     try {
       const res = await fetch('/api/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dossier,
+          dossier: activeDossier,
           role,
           contact_name: contactName,
-          template: template ?? activeTemplate ?? undefined
+          template: template ?? activeTemplate ?? undefined,
+          pitch_bullet: bullet ?? selectedBullet ?? undefined,
+          follow_up: followUpContext ?? undefined
         })
       })
 
       const data = await res.json()
+
+      if (activeTabIdRef.current !== tabId) {
+        const stale = tabDataRef.current.get(tabId)
+        if (stale) {
+          tabDataRef.current.set(tabId, {
+            ...stale, loading: false,
+            ...(res.ok && data.success
+              ? { email: data.email, trustGatePassed: true, warning: '', error: '' }
+              : { trustGatePassed: false, warning: (!data.success && data.warning) ? data.warning : '', error: !res.ok ? 'Email generation failed. Please try again.' : '' })
+          })
+        }
+        return
+      }
 
       if (!res.ok) { setError('Email generation failed. Please try again.'); setTrustGatePassed(false); return }
       if (!data.success && data.warning) { setWarning(data.warning); setTrustGatePassed(false); return }
@@ -150,22 +524,210 @@ export default function EmailPage() {
       setEmail(data.email)
       setTrustGatePassed(true)
     } catch {
+      if (activeTabIdRef.current !== tabId) {
+        const stale = tabDataRef.current.get(tabId)
+        if (stale) tabDataRef.current.set(tabId, { ...stale, loading: false, error: 'Something went wrong. Please try again.', trustGatePassed: false })
+        return
+      }
       setError('Something went wrong. Please try again.')
       setTrustGatePassed(false)
     } finally {
-      setLoading(false)
+      if (activeTabIdRef.current === tabId) setLoading(false)
     }
   }
 
-  function handleContactSelect(c: Contact) {
-    setContact(c)
-    setSelectedRole(c.role)
+  async function handleContactSelect(c: Contact) {
+    if (!c.email && c.contactId) {
+      setRevealingContact(c.contactId)
+      try {
+        const res = await fetch('/api/lookup-contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brand_name: '', enrich_id: c.contactId }),
+        })
+        const data = await res.json()
+        if (data.success && data.email) {
+          c = { ...c, email: data.email, phone: data.phone }
+        }
+      } catch {
+        // proceed with empty email — user types manually
+      } finally {
+        setRevealingContact(null)
+      }
+    }
     setShowContactDropdown(false)
-    generateEmail(c.role)
+    addTabForContact(c)
+    // Explicitly set To field — don't rely on snapshot batching
+    setToEmail(c.email ?? '')
+    // Null out pending ref and call generateEmail directly with the live contact
+    // so we never use stale contact state from a previous tab
+    pendingGenerateRef.current = null
+    if (dossier) generateEmail(c.role, undefined, undefined, { dossier, contactName: c.name || 'there' })
+  }
+
+  async function handleCopyMessage() {
+    if (!email) return
+    await navigator.clipboard.writeText(email.body)
+    setCopied(true)
+    setHasCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleMarkLinkedIn() {
+    if (!dossier || !email) return
+    setLinkedInSending(true)
+    try {
+      const today = new Date().toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      await Promise.all([
+        fetch('/api/save-to-sheets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand_name: dossier.brand_name,
+            website: (dossier as Record<string, unknown>).website ?? '',
+            lead_source: localStorage.getItem('lead_source') ?? 'Outbound',
+            revenue_estimate: (dossier as Record<string, unknown>).revenue_estimate ?? '',
+            retailers: (dossier as Record<string, unknown>).retailers ?? [],
+            category: (dossier as Record<string, unknown>).category ?? '',
+            icp_score: (dossier as Record<string, unknown>).icp_score ?? 0,
+            score_band: (dossier as Record<string, unknown>).score_band ?? '',
+            signals: (dossier as Record<string, unknown>).signals ?? [],
+            target_role: contact?.role ?? selectedRole,
+            contact_name: contact?.name ?? '',
+            email_subject: email.subject,
+            email_body: email.body,
+            status: 'Sent',
+          }),
+        }),
+        fetch('/api/contact-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand_name: dossier.brand_name,
+            contact_role: contact?.role ?? selectedRole,
+            contact_name: contact?.name ?? '',
+            contact_email: contact?.email ?? '',
+            method: 'linkedin',
+            sent_at: today,
+          }),
+        }),
+        fetch('/api/update-pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brand_name: dossier.brand_name, status: 'Sent' }),
+        }),
+      ])
+      setLinkedInSent(true)
+    } catch {
+      // fail silently — the user can retry
+    } finally {
+      setLinkedInSending(false)
+    }
+  }
+
+  function applyInlineFormat(prefix: string, suffix: string) {
+    const ta = bodyTextareaRef.current
+    if (!ta || !email) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    // Read from the DOM value — avoids any state/DOM sync lag on rapid edits
+    const body = ta.value
+    const newBody = body.slice(0, start) + prefix + body.slice(start, end) + suffix + body.slice(end)
+    // Store target selection so useLayoutEffect can restore it after React commits
+    pendingSelectionRef.current = [start + prefix.length, end + prefix.length]
+    setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+  }
+
+  function applyLineFormat(marker: string) {
+    const ta = bodyTextareaRef.current
+    if (!ta || !email) return
+    const pos = ta.selectionStart
+    const body = ta.value
+    const lineStart = body.lastIndexOf('\n', pos - 1) + 1
+    if (body.slice(lineStart).startsWith(marker)) return
+    const newBody = body.slice(0, lineStart) + marker + body.slice(lineStart)
+    pendingSelectionRef.current = [pos + marker.length, pos + marker.length]
+    setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+  }
+
+  function clearFormatting() {
+    const ta = bodyTextareaRef.current
+    if (!ta || !email) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const body = ta.value
+    const hasSelection = end > start
+    const target = hasSelection ? body.slice(start, end) : body
+    const offset = hasSelection ? start : 0
+    const cleaned = target
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/^#{1,6} /gm, '')
+      .replace(/^- /gm, '')
+    const newBody = body.slice(0, offset) + cleaned + body.slice(offset + target.length)
+    pendingSelectionRef.current = [offset, offset + cleaned.length]
+    setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+  }
+
+  function getDefaultScheduledAt(): string {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`
+  }
+
+  function getTimezoneForMarkets(markets?: string[]): string {
+    if (!markets || markets.length === 0) return 'Australia/Sydney'
+    const m = markets[0].toLowerCase()
+    if (m.includes('us') || m.includes('united states') || m.includes('america')) return 'America/New_York'
+    if (m.includes('uk') || m.includes('united kingdom') || m.includes('britain')) return 'Europe/London'
+    if (m.includes('eu') || m.includes('europe')) return 'Europe/London'
+    return 'Australia/Sydney'
+  }
+
+  function openScheduleModal() {
+    setScheduledAt(getDefaultScheduledAt())
+    setScheduleTimezone(getTimezoneForMarkets((dossier as {markets?: string[]}).markets))
+    setShowScheduleModal(true)
+  }
+
+  async function handleSchedule() {
+    if (!email || !scheduledAt) return
+    setScheduling(true)
+    try {
+      const res = await fetch('/api/schedule-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: toEmail || contact?.email,
+          cc: ccEmail || undefined,
+          bcc: bccEmail || undefined,
+          subject: email.subject,
+          body: email.body,
+          brand_name: dossier?.brand_name,
+          contact_name: contact?.name ?? '',
+          scheduled_at_local: scheduledAt,
+          timezone: scheduleTimezone,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setError('Failed to schedule email. Please try again.')
+        setShowScheduleModal(false)
+        return
+      }
+      setScheduledTabIds(prev => new Set([...prev, activeTabId]))
+      setShowScheduleModal(false)
+    } catch {
+      setError('Something went wrong. Please try again.')
+      setShowScheduleModal(false)
+    } finally {
+      setScheduling(false)
+    }
   }
 
   async function handleSend() {
-    if (!email || !contact) return
+    if (!email) return
     setSending(true)
     setError('')
 
@@ -174,12 +736,15 @@ export default function EmailPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: contact.email,
+          to: toEmail || contact?.email,
+          cc: ccEmail,
+          bcc: bccEmail,
           subject: email.subject,
           emailBody: email.body,
-          contactName: contact.name,
+          contactName: contact?.name ?? '',
           role: selectedRole,
           leadSource: localStorage.getItem('lead_source') ?? 'Outbound',
+          senderName: localStorage.getItem('atelier_user_name') ?? '',
           dossier
         })
       })
@@ -199,11 +764,75 @@ export default function EmailPage() {
     }
   }
 
-  if (!dossier) return null
+  if (!checked) return null
+
+  if (!dossier) return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 320, textAlign: 'center', gap: 16 }}>
+      <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--slate-300)' }}>
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" strokeWidth="1.5"/>
+        <polyline points="22,6 12,13 2,6" strokeWidth="1.5"/>
+      </svg>
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-default)', marginBottom: 6 }}>No brand selected</div>
+        <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>Search for a brand first, then come back to draft an email.</div>
+      </div>
+      <a href="/portfolio" className="btn btn-primary btn-sm">Browse brands</a>
+    </div>
+  )
 
   return (
     <div>
-      <div className="page-eyebrow">Email Generator</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--black-100)' }}>
+        {tabIds.map(id => (
+          <div
+            key={id}
+            onClick={() => switchTab(id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 14px',
+              fontSize: 12, fontWeight: id === activeTabId ? 500 : 400,
+              color: id === activeTabId ? 'var(--text-default)' : 'var(--slate-400)',
+              background: id === activeTabId ? '#fff' : 'transparent',
+              border: '1px solid',
+              borderColor: id === activeTabId ? 'var(--black-100)' : 'transparent',
+              borderBottom: id === activeTabId ? '1px solid #fff' : '1px solid transparent',
+              borderRadius: 'var(--radius-sm) var(--radius-sm) 0 0',
+              cursor: id === activeTabId ? 'default' : 'pointer',
+              marginBottom: id === activeTabId ? -1 : 0,
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{getTabLabel(id)}</span>
+            {tabIds.length > 1 && (
+              <button
+                onClick={e => { e.stopPropagation(); closeTab(id) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate-400)', fontSize: 14, padding: '0 2px', lineHeight: 1, marginLeft: 2 }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          onClick={addTab}
+          style={{ marginBottom: 6, marginLeft: 4, padding: '3px 9px', background: 'none', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 16, color: 'var(--slate-400)', lineHeight: 1 }}
+        >
+          +
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div className="page-eyebrow" style={{ margin: 0 }}>Email Generator</div>
+        <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>→</div>
+        <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>{dossier.brand_name as string}</div>
+        {contact && (
+          <>
+            <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>→</div>
+            <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>{contact.name}</div>
+          </>
+        )}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <h1 style={{ fontSize: 28, fontWeight: 500, letterSpacing: '-0.5px', margin: 0 }}>
           Outreach to {dossier.brand_name as string}
@@ -215,25 +844,21 @@ export default function EmailPage() {
       <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 28 }}>
         Personalised from {dossier.brand_name as string}&apos;s research dossier. Review every detail before it leaves your inbox.
       </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 16px', background: 'var(--slate-100)', borderRadius: 'var(--radius-md)', border: '1px solid var(--black-100)' }}>
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0, color: 'var(--slate-400)' }}>
-          <rect x="2" y="4" width="20" height="16" rx="2" strokeWidth="2"/>
-          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" strokeWidth="2"/>
-        </svg>
-        <span style={{ fontSize: 13, color: 'var(--slate-500)', flex: 1 }}>Emails send from your Gmail account</span>
-        <a href="/api/auth/gmail" className="btn btn-secondary btn-sm">Connect Gmail</a>
-      </div>
 
       {sent && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--green-100)', border: '1px solid var(--green-300)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 24 }}>
-          <div className="success-mark" style={{ width: 32, height: 32 }}>
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <polyline points="20,6 9,17 4,12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <div style={{ background: 'var(--green-100)', border: '1px solid var(--green-300)', borderRadius: 'var(--radius-md)', padding: '24px', marginBottom: 24, textAlign: 'center' }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--green-400)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            <svg width="22" height="22" fill="none" stroke="#fff" viewBox="0 0 24 24">
+              <polyline points="20,6 9,17 4,12" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <div>
-            <div style={{ fontWeight: 500, fontSize: 14, color: 'var(--green-500)' }}>Email sent successfully</div>
-            <div style={{ fontSize: 12, color: 'var(--green-400)' }}>Sent to {contact?.name} · {contact?.email}</div>
+          <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--green-500)', marginBottom: 4 }}>Email sent successfully</div>
+          <div style={{ fontSize: 13, color: 'var(--green-400)', marginBottom: 20 }}>
+            Sent to {contact?.name ? `${contact.name}${contact.role ? ` · ${contact.role}` : ''} · ${toEmail || contact.email}` : toEmail || contact?.email}
+          </div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button onClick={() => router.push('/')} className="btn btn-primary btn-sm">Research another brand</button>
+            <button onClick={() => router.push('/pipeline')} className="btn btn-secondary btn-sm">View pipeline</button>
           </div>
         </div>
       )}
@@ -245,32 +870,98 @@ export default function EmailPage() {
         </div>
       )}
 
-      {activeTemplate && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--brand-100)', border: '1px solid var(--brand-200)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 12 }}>
-          <div style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 500 }}>
-            Using saved template as style guide
+      {selectedBullet && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#050849', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="14" height="14" fill="none" stroke="#fff" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+              <polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', lineHeight: 1.4 }}>
+              <span style={{ fontWeight: 600, color: '#fff' }}>Pitch point in use: </span>{selectedBullet}
+            </div>
           </div>
           <button
-            onClick={() => { setActiveTemplate(null); generateEmail(selectedRole) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontSize: 12 }}
+            onClick={() => { setSelectedBullet(''); generateEmail(selectedRole) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', fontSize: 12, flexShrink: 0, marginLeft: 12 }}
           >
             Remove ×
           </button>
         </div>
       )}
 
+      {outreachTiming && (
+        <div style={{
+          background: outreachTiming.urgency === 'high' ? '#050849' : outreachTiming.urgency === 'medium' ? 'var(--orange-100)' : 'var(--slate-100)',
+          border: '1px solid',
+          borderColor: outreachTiming.urgency === 'high' ? '#050849' : outreachTiming.urgency === 'medium' ? 'var(--orange-200)' : 'var(--black-100)',
+          borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 12, cursor: 'pointer'
+        }}
+          onClick={() => setShowTimingDetail(!showTimingDetail)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14 }}>📅</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: outreachTiming.urgency === 'high' ? '#fff' : 'var(--text-default)' }}>
+                Best time to reach out: {outreachTiming.recommended_day === 'Today' || outreachTiming.recommended_day === 'Tomorrow' ? outreachTiming.recommended_day : outreachTiming.recommended_date}
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+                padding: '2px 8px', borderRadius: 4,
+                background: outreachTiming.urgency === 'high' ? 'rgba(255,255,255,0.15)' : outreachTiming.urgency === 'medium' ? 'var(--orange-200)' : 'var(--slate-200)',
+                color: outreachTiming.urgency === 'high' ? '#fff' : outreachTiming.urgency === 'medium' ? 'var(--orange-400)' : 'var(--slate-400)'
+              }}>
+                {outreachTiming.urgency} urgency
+              </span>
+            </div>
+            <svg width="14" height="14" fill="none" stroke={outreachTiming.urgency === 'high' ? '#fff' : 'currentColor'} viewBox="0 0 24 24" style={{ transform: showTimingDetail ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+              <polyline points="6,9 12,15 18,9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          {showTimingDetail && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${outreachTiming.urgency === 'high' ? 'rgba(255,255,255,0.15)' : 'var(--black-100)'}` }}>
+              <div style={{ fontSize: 12, color: outreachTiming.urgency === 'high' ? 'rgba(255,255,255,0.8)' : 'var(--slate-500)', lineHeight: 1.5 }}>
+                {outreachTiming.urgency_reason}
+                {outreachTiming.signal_context && ` — "${outreachTiming.signal_context.slice(0, 80)}${outreachTiming.signal_context.length > 80 ? '...' : ''}"`}
+              </div>
+              {outreachTiming.within_hours && (
+                <div style={{ fontSize: 11, fontWeight: 600, color: outreachTiming.urgency === 'high' ? 'rgba(255,255,255,0.6)' : 'var(--orange-400)', marginTop: 6 }}>
+                  ⚡ Act within {outreachTiming.within_hours} hours for best results
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {followUpContext && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--orange-100)', border: '1px solid var(--orange-200)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: 'var(--orange-500)', fontWeight: 500 }}>
+            ⏰ Follow-up mode — original email sent {followUpContext.date_sent}
+            {followUpContext.original_subject ? ` · "${followUpContext.original_subject}"` : ''}
+          </div>
+          <button
+            onClick={() => setFollowUpContext(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--orange-400)', fontSize: 12 }}
+          >
+            Dismiss ×
+          </button>
+        </div>
+      )}
+
+      {activeTemplate && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--brand-100)', border: '1px solid var(--brand-200)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 500 }}>Using saved template as style guide</div>
+          <button onClick={() => { setActiveTemplate(null); generateEmail(selectedRole) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontSize: 12 }}>Remove ×</button>
+        </div>
+      )}
+
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-400)' }}>Trust gate</span>
-          {trustGatePassed === null && (
-            <span style={{ fontSize: 12, color: 'var(--slate-400)', background: 'var(--slate-200)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>—</span>
-          )}
-          {trustGatePassed === true && (
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#fff', background: 'var(--green-400)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>Pass</span>
-          )}
-          {trustGatePassed === false && (
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#fff', background: 'var(--red-500)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>Fail</span>
-          )}
+          {trustGatePassed === null && <span style={{ fontSize: 12, color: 'var(--slate-400)', background: 'var(--slate-200)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>—</span>}
+          {trustGatePassed === true && <span style={{ fontSize: 12, fontWeight: 500, color: '#fff', background: 'var(--green-400)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>Pass</span>}
+          {trustGatePassed === false && <span style={{ fontSize: 12, fontWeight: 500, color: '#fff', background: 'var(--red-500)', padding: '3px 10px', borderRadius: 'var(--radius-xs)' }}>Fail</span>}
         </div>
       </div>
 
@@ -290,8 +981,7 @@ export default function EmailPage() {
               position: 'absolute', right: 0, top: '100%', marginTop: 4,
               background: '#fff', border: '1px solid var(--black-100)',
               borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-400)',
-              minWidth: 280, zIndex: 50, overflow: 'hidden',
-              maxHeight: 360, overflowY: 'auto'
+              minWidth: 280, zIndex: 50, maxHeight: 360, overflowY: 'auto'
             }}>
               {loadingContacts && (
                 <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -303,31 +993,41 @@ export default function EmailPage() {
               )}
               {!loadingContacts && allContacts.map((c, i) => {
                 const history = contactHistory.find(h => h.contact_role === c.role)
+                const isRevealing = revealingContact === c.contactId
+                const isBlocked = revealingContact !== null
                 return (
                   <div
                     key={i}
-                    onClick={() => handleContactSelect(c)}
+                    onClick={() => !isBlocked && handleContactSelect(c)}
                     style={{
-                      padding: '10px 16px', cursor: 'pointer',
+                      padding: '10px 16px',
+                      cursor: isBlocked ? 'default' : 'pointer',
                       borderBottom: i < allContacts.length - 1 ? '1px solid var(--black-100)' : 'none',
-                      background: contact?.role === c.role ? 'var(--slate-100)' : history ? 'var(--green-100)' : '#fff'
+                      background: contact?.role === c.role ? 'var(--slate-100)' : history ? 'var(--green-100)' : '#fff',
+                      opacity: isBlocked && !isRevealing ? 0.5 : 1,
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--slate-100)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = contact?.role === c.role ? 'var(--slate-100)' : history ? 'var(--green-100)' : '#fff')}
+                    onMouseEnter={e => { if (!isBlocked) e.currentTarget.style.background = 'var(--slate-100)' }}
+                    onMouseLeave={e => { if (!isBlocked) e.currentTarget.style.background = contact?.role === c.role ? 'var(--slate-100)' : history ? 'var(--green-100)' : '#fff' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)' }}>{c.role}</span>
-                          {history && (
-                            <span style={{ fontSize: 10, color: 'var(--green-400)', fontWeight: 500 }}>
-                              Contacted {new Date(history.sent_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                            </span>
-                          )}
+                          {history && <span style={{ fontSize: 10, color: 'var(--green-400)', fontWeight: 500 }}>Contacted {new Date(history.sent_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>}
                           {!c.verified && !history && <span style={{ fontSize: 10, color: 'var(--orange-400)' }}>Unverified</span>}
                         </div>
                         <div style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>{c.email}</div>
+                        {isRevealing ? (
+                          <div style={{ fontSize: 12, color: 'var(--slate-400)', display: 'flex', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                            <div className="spinner" style={{ width: 10, height: 10 }} /> Revealing...
+                          </div>
+                        ) : c.email ? (
+                          <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>{c.email}</div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: 'var(--slate-400)', fontStyle: 'italic' }}>
+                            {c.contactId ? 'Click to reveal email' : 'No email — enter manually'}
+                          </div>
+                        )}
                       </div>
                       {contact?.role === c.role && (
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--green-400)' }}>
@@ -341,10 +1041,7 @@ export default function EmailPage() {
             </div>
           )}
         </div>
-        <button
-          onClick={() => { setShowTemplates(!showTemplates); fetchTemplates() }}
-          className="btn btn-secondary btn-sm"
-        >
+        <button onClick={() => { setShowTemplates(!showTemplates); fetchTemplates() }} className="btn btn-secondary btn-sm">
           {showTemplates ? 'Hide templates' : 'Use saved template'}
         </button>
       </div>
@@ -383,11 +1080,85 @@ export default function EmailPage() {
       )}
 
       <div className="card" style={{ marginBottom: 20 }}>
-        {contact && (
-          <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--black-100)' }}>
-            <div className="kv-label">Recipient</div>
-            <div style={{ fontWeight: 500, fontSize: 14 }}>{contact.name}</div>
-            <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>{contact.role} · {contact.email}</div>
+        <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--black-100)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 52, fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0 }}>From</div>
+            <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>{userEmail || userName || 'Your Gmail account'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 52, fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0 }}>To</div>
+            <input
+              type="text"
+              value={toEmail}
+              onChange={e => setToEmail(e.target.value)}
+              placeholder={contact?.name ? `Enter email for ${contact.name}` : 'Recipient email'}
+              style={{ fontSize: 13, color: 'var(--text-default)', border: 'none', borderBottom: '1px solid var(--black-100)', outline: 'none', background: 'transparent', flex: 1, padding: '2px 0' }}
+            />
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={() => setShowCc(!showCc)}
+                style={{ fontSize: 11, fontWeight: 500, color: showCc ? '#fff' : 'var(--brand-400)', background: showCc ? '#050849' : 'transparent', border: '1px solid', borderColor: showCc ? '#050849' : 'var(--brand-200)', borderRadius: 4, cursor: 'pointer', padding: '2px 8px' }}
+              >
+                CC
+              </button>
+              <button
+                onClick={() => setShowBcc(!showBcc)}
+                style={{ fontSize: 11, fontWeight: 500, color: showBcc ? '#fff' : 'var(--brand-400)', background: showBcc ? '#050849' : 'transparent', border: '1px solid', borderColor: showBcc ? '#050849' : 'var(--brand-200)', borderRadius: 4, cursor: 'pointer', padding: '2px 8px' }}
+              >
+                BCC
+              </button>
+            </div>
+          </div>
+          {showCc && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 52, fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0 }}>CC</div>
+              <input
+                type="text"
+                value={ccEmail}
+                onChange={e => setCcEmail(e.target.value)}
+                placeholder="Add CC email(s), comma separated"
+                style={{ fontSize: 13, color: 'var(--text-default)', border: 'none', borderBottom: '1px solid var(--black-100)', outline: 'none', background: 'transparent', flex: 1, padding: '2px 0' }}
+                autoFocus
+              />
+            </div>
+          )}
+          {showBcc && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 52, fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0 }}>BCC</div>
+              <input
+                type="text"
+                value={bccEmail}
+                onChange={e => setBccEmail(e.target.value)}
+                placeholder="Add BCC email(s), comma separated"
+                style={{ fontSize: 13, color: 'var(--text-default)', border: 'none', borderBottom: '1px solid var(--black-100)', outline: 'none', background: 'transparent', flex: 1, padding: '2px 0' }}
+                autoFocus
+              />
+            </div>
+          )}
+        </div>
+
+        {contact && contact.verified === false && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+            background: 'var(--orange-100)', border: '1px solid var(--orange-200)',
+            borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 12,
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--orange-500)', lineHeight: 1.5 }}>
+              ⚠️ Unverified email — delivery not guaranteed. Consider reaching out via LinkedIn instead.
+            </span>
+            {contact.linkedin && (
+              <a
+                href={contact.linkedin}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  fontSize: 12, fontWeight: 500, color: 'var(--orange-500)',
+                  whiteSpace: 'nowrap', textDecoration: 'none', flexShrink: 0,
+                }}
+              >
+                View on LinkedIn ↗
+              </a>
+            )}
           </div>
         )}
 
@@ -427,24 +1198,180 @@ export default function EmailPage() {
               />
             </div>
             <div>
-              <label className="field-label">Body</label>
-              <textarea
-                value={email.body}
-                onChange={e => setEmail({ ...email, body: e.target.value })}
-                rows={12}
-                className="textarea"
-              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label className="field-label" style={{ margin: 0 }}>Body</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 500,
+                    color: email.body.split(/\s+/).filter(Boolean).length > 100 ? 'var(--red-500)' : 'var(--slate-400)'
+                  }}>
+                    {email.body.split(/\s+/).filter(Boolean).length} / 100 words
+                  </span>
+                  <button
+                    onClick={handleCopyMessage}
+                    style={{
+                      fontSize: 11, fontWeight: 500, padding: '3px 10px',
+                      borderRadius: 'var(--radius-xs)', cursor: 'pointer',
+                      border: '1px solid',
+                      background: copied ? 'var(--green-100)' : '#fff',
+                      color: copied ? 'var(--green-400)' : 'var(--slate-500)',
+                      borderColor: copied ? 'var(--green-300)' : 'var(--black-100)',
+                    }}
+                  >
+                    {copied ? 'Copied ✓' : 'Copy message'}
+                  </button>
+                </div>
+              </div>
+              <div ref={pitchRef} style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '3px 6px', background: 'var(--slate-100)', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-xs)', marginBottom: 6 }}>
+                  {([
+                    { label: 'B', title: 'Bold', extra: { fontWeight: 700 }, action: () => applyInlineFormat('**', '**') },
+                    { label: 'I', title: 'Italic', extra: { fontStyle: 'italic' as const }, action: () => applyInlineFormat('*', '*') },
+                    { label: '•', title: 'Bullet point', extra: {}, action: () => applyLineFormat('- ') },
+                    { label: 'H', title: 'Header', extra: { letterSpacing: '-0.02em' }, action: () => applyLineFormat('## ') },
+                    { label: '✕', title: 'Clear formatting', extra: { fontSize: 10 }, action: clearFormatting },
+                  ] as { label: string; title: string; extra: React.CSSProperties; action: () => void }[]).map((btn, i) => (
+                    <button
+                      key={btn.label}
+                      title={btn.title}
+                      onMouseDown={e => { e.preventDefault(); btn.action() }}
+                      style={{
+                        width: 28, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: 'none', border: 'none', cursor: 'pointer', borderRadius: 4,
+                        fontSize: 13, color: 'var(--slate-500)', transition: 'background 0.1s, color 0.1s',
+                        ...(i === 4 ? { marginLeft: 4 } : {}),
+                        ...btn.extra,
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#050849'; e.currentTarget.style.color = '#fff' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--slate-500)' }}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                  <div style={{ width: 1, height: 14, background: 'var(--black-100)', margin: '0 6px 0 2px' }} />
+                  <span style={{ fontSize: 11, color: 'var(--slate-300)', userSelect: 'none' }}>Format</span>
+                </div>
+                <textarea
+                  ref={bodyTextareaRef}
+                  value={email.body}
+                  onChange={e => setEmail({ ...email, body: e.target.value })}
+                  rows={12}
+                  className="textarea"
+                />
+                <button
+                  onClick={() => { setShowPitch(!showPitch); if (!showPitch) fetchPitchAngles() }}
+                  style={{
+                    position: 'absolute', bottom: 10, right: 10,
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    fontSize: 11, fontWeight: 500, padding: '4px 10px',
+                    background: showPitch ? '#050849' : 'rgba(255,255,255,0.92)',
+                    color: showPitch ? '#fff' : 'var(--text-default)',
+                    border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer', backdropFilter: 'blur(4px)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)'
+                  }}
+                >
+                  💡 Pitch angles
+                </button>
+                {showPitch && (
+                  <div style={{
+                    position: 'absolute', bottom: 'calc(100% - 28px)', right: 10, marginBottom: 4,
+                    background: '#fff', border: '1px solid var(--black-100)',
+                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-400)',
+                    padding: '12px 16px', zIndex: 40, minWidth: 340, maxWidth: 480
+                  }}>
+                    {loadingPitch && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--slate-400)', fontSize: 13 }}>
+                        <div className="spinner" /> Generating pitch angles...
+                      </div>
+                    )}
+                    {!loadingPitch && recommendedRole && pitchAngles[recommendedRole] && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', marginBottom: 10 }}>
+                          {recommendedRole}
+                        </div>
+                        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {pitchAngles[recommendedRole].map((bullet, i) => (
+                            <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, lineHeight: 1.5 }}>
+                              <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#050849', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
+                              <span style={{ color: 'var(--text-default)', flex: 1 }}>{bullet}</span>
+                              <button
+                                onClick={() => { setSelectedBullet(bullet); setShowPitch(false); generateEmail(selectedRole, undefined, bullet) }}
+                                style={{
+                                  flexShrink: 0, fontSize: 11, fontWeight: 500,
+                                  padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+                                  background: selectedBullet === bullet ? '#050849' : 'transparent',
+                                  color: selectedBullet === bullet ? '#fff' : 'var(--brand-400)',
+                                  border: '1px solid',
+                                  borderColor: selectedBullet === bullet ? '#050849' : 'var(--brand-200)',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {selectedBullet === bullet ? 'In use ✓' : 'Use in email'}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {!loadingPitch && (!recommendedRole || !pitchAngles[recommendedRole]) && (
+                      <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>No pitch angles yet</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {hasCopied && !linkedInSent && (
+                <button
+                  onClick={handleMarkLinkedIn}
+                  disabled={linkedInSending}
+                  style={{
+                    marginTop: 10, width: '100%', fontSize: 12, fontWeight: 500,
+                    padding: '8px 0', borderRadius: 'var(--radius-sm)', cursor: linkedInSending ? 'default' : 'pointer',
+                    background: '#fff', color: 'var(--slate-500)',
+                    border: '1px solid var(--black-100)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6zM2 9h4v12H2z"/>
+                    <circle cx="4" cy="4" r="2"/>
+                  </svg>
+                  {linkedInSending ? 'Recording…' : 'Mark as sent via LinkedIn'}
+                </button>
+              )}
+              {linkedInSent && (
+                <div style={{
+                  marginTop: 10, fontSize: 12, fontWeight: 500, color: 'var(--green-400)',
+                  background: 'var(--green-100)', border: '1px solid var(--green-300)',
+                  borderRadius: 'var(--radius-sm)', padding: '8px 14px', textAlign: 'center',
+                }}>
+                  Recorded in pipeline ✓
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {email && !sent && (
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button onClick={() => setShowModal(true)} className="btn btn-primary" style={{ flex: 1, height: 48, fontSize: 15 }}>
+      {scheduledTabIds.has(activeTabId) && (
+        <div style={{ background: 'var(--brand-100)', border: '1px solid var(--brand-200)', borderRadius: 'var(--radius-md)', padding: '16px 20px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 18 }}>🕐</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: '#050849' }}>Email scheduled</div>
+            <div style={{ fontSize: 12, color: 'var(--brand-400)', marginTop: 2 }}>This email will be sent automatically at the scheduled time. View or cancel in the dashboard.</div>
+          </div>
+        </div>
+      )}
+
+      {email && !sent && !scheduledTabIds.has(activeTabId) && (
+        <div style={{ position: 'sticky', bottom: 24, zIndex: 10, display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowModal(true)} className="btn btn-primary" style={{ flex: 1, height: 52, fontSize: 15, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
             Send email
           </button>
-          <button onClick={() => generateEmail(selectedRole)} disabled={loading} className="btn btn-secondary" style={{ flex: 1, height: 48, fontSize: 15 }}>
+          <button onClick={openScheduleModal} className="btn btn-secondary" style={{ flex: 1, height: 52, fontSize: 15, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
+            🕐 Schedule send
+          </button>
+          <button onClick={() => generateEmail(selectedRole)} disabled={loading} className="btn btn-secondary" style={{ flex: 1, height: 52, fontSize: 15, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
             Regenerate
           </button>
         </div>
@@ -460,16 +1387,24 @@ export default function EmailPage() {
             <div className="modal-body">
               <div className="summary-row">
                 <div className="k">From</div>
-                <div className="v">Samara Abells — via Gmail</div>
+                <div className="v">{userEmail || userName || 'Your Gmail account'}</div>
               </div>
               <div className="summary-row">
                 <div className="k">To</div>
-                <div className="v">{contact?.name} &lt;{contact?.email}&gt;</div>
+                <div className="v">{toEmail || contact?.email}</div>
               </div>
-              <div className="summary-row">
-                <div className="k">Role</div>
-                <div className="v">{selectedRole}</div>
-              </div>
+              {ccEmail && (
+                <div className="summary-row">
+                  <div className="k">CC</div>
+                  <div className="v">{ccEmail}</div>
+                </div>
+              )}
+              {bccEmail && (
+                <div className="summary-row">
+                  <div className="k">BCC</div>
+                  <div className="v">{bccEmail}</div>
+                </div>
+              )}
               <div className="summary-row">
                 <div className="k">Subject</div>
                 <div className="v">{email.subject}</div>
@@ -483,6 +1418,63 @@ export default function EmailPage() {
               <button onClick={() => setShowModal(false)} className="btn btn-secondary">Cancel</button>
               <button onClick={handleSend} disabled={sending} className="btn btn-primary">
                 {sending ? 'Sending...' : 'Confirm send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showScheduleModal && email && (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-head">
+              <div className="modal-title">Schedule send</div>
+              <div className="modal-sub">This email will be sent automatically at the chosen time.</div>
+            </div>
+            <div className="modal-body">
+              {outreachTiming && (
+                <div style={{ background: 'var(--brand-100)', border: '1px solid var(--brand-200)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 20, fontSize: 12, color: 'var(--brand-400)' }}>
+                  <span style={{ fontWeight: 600 }}>💡 Recommended:</span> {outreachTiming.recommended_day === 'Today' || outreachTiming.recommended_day === 'Tomorrow' ? outreachTiming.recommended_day : outreachTiming.recommended_date} · {outreachTiming.day_reason}
+                </div>
+              )}
+              <div style={{ marginBottom: 16 }}>
+                <label className="field-label">Date &amp; time</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={e => setScheduledAt(e.target.value)}
+                  className="input"
+                  min={new Date().toISOString().slice(0, 16)}
+                />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label className="field-label">Timezone</label>
+                <select
+                  value={scheduleTimezone}
+                  onChange={e => setScheduleTimezone(e.target.value)}
+                  className="input"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <option value="Australia/Sydney">AEST — Sydney / Melbourne (UTC+10)</option>
+                  <option value="Australia/Perth">AWST — Perth (UTC+8)</option>
+                  <option value="America/New_York">EST — New York (UTC-5)</option>
+                  <option value="America/Los_Angeles">PST — Los Angeles (UTC-8)</option>
+                  <option value="America/Chicago">CST — Chicago (UTC-6)</option>
+                  <option value="Europe/London">GMT — London (UTC+0)</option>
+                  <option value="Europe/Paris">CET — Paris (UTC+1)</option>
+                  <option value="Asia/Singapore">SGT — Singapore (UTC+8)</option>
+                  <option value="Asia/Tokyo">JST — Tokyo (UTC+9)</option>
+                </select>
+              </div>
+              <div style={{ borderTop: '1px solid var(--black-100)', paddingTop: 16 }}>
+                <div className="summary-row"><div className="k">To</div><div className="v">{toEmail || contact?.email || '—'}</div></div>
+                <div className="summary-row"><div className="k">Subject</div><div className="v">{email.subject}</div></div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button onClick={() => setShowScheduleModal(false)} className="btn btn-secondary">Cancel</button>
+              <button onClick={handleSchedule} disabled={scheduling || !scheduledAt} className="btn btn-primary">
+                {scheduling ? 'Scheduling...' : 'Schedule send'}
               </button>
             </div>
           </div>

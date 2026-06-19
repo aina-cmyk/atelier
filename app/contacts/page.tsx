@@ -16,6 +16,7 @@ interface Contact {
   jobTitle?: string
   seniority?: string
   contactId?: string
+  canReveal?: { field: string; credits: number }[]
 }
 
 interface Dossier {
@@ -45,13 +46,15 @@ export default function ContactsPage() {
   const [contactHistory, setContactHistory] = useState<{contact_role: string; sent_at: string; method?: string}[]>([])
   const [loggingCall, setLoggingCall] = useState<string | null>(null)
   const [loggedCalls, setLoggedCalls] = useState<Set<string>>(new Set())
+  const [contactSearch, setContactSearch] = useState('')
   const router = useRouter()
 
   useEffect(() => {
     const stored = localStorage.getItem('current_dossier')
-    if (!stored) { router.push('/'); return }
+    if (!stored) { router.push('/portfolio'); return }
     const d = JSON.parse(stored)
     setDossier(d)
+    document.title = `${d.brand_name} Contacts — Atelier`
     fetchContacts(d.brand_name, d.website)
     fetchTemplates()
   }, [router])
@@ -162,7 +165,16 @@ export default function ContactsPage() {
     router.push('/email')
   }
 
-  const grouped = contacts.reduce((acc, contact) => {
+  const filteredContacts = contacts
+    .filter(c => !c.placeholder)
+    .filter(c => contactSearch
+      ? c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
+        c.role.toLowerCase().includes(contactSearch.toLowerCase()) ||
+        (c.department ?? '').toLowerCase().includes(contactSearch.toLowerCase())
+      : true
+    )
+
+  const grouped = filteredContacts.reduce((acc, contact) => {
     const dept = contact.department ?? 'Other'
     if (!acc[dept]) acc[dept] = []
     acc[dept].push(contact)
@@ -177,7 +189,7 @@ export default function ContactsPage() {
   })
 
   return (
-    <div>
+    <div onClick={() => setSelectedContact(null)}>
       <div className="page-eyebrow">Contacts</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h1 style={{ fontSize: 28, fontWeight: 500, letterSpacing: '-0.5px', margin: 0 }}>{dossier.brand_name}</h1>
@@ -188,7 +200,29 @@ export default function ContactsPage() {
           <button onClick={() => router.push('/dossier')} className="btn btn-ghost btn-sm">← Back to dossier</button>
         </div>
       </div>
-      <p className="page-sub" style={{ marginBottom: 28 }}>Select a contact to generate an outreach email or log a phone call.</p>
+      <p className="page-sub" style={{ marginBottom: 16 }}>Select a contact to generate an outreach email or log a phone call.</p>
+
+      <div style={{ position: 'relative', marginBottom: 24 }}>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'var(--slate-400)' }}>
+          <circle cx="11" cy="11" r="8" strokeWidth="2"/>
+          <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+        <input
+          type="text"
+          value={contactSearch}
+          onChange={e => setContactSearch(e.target.value)}
+          placeholder="Search contacts by name or role..."
+          style={{ width: '100%', height: 40, paddingLeft: 38, paddingRight: 16, fontSize: 13, border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)', outline: 'none', background: '#fff' }}
+        />
+        {contactSearch && (
+          <button
+            onClick={() => setContactSearch('')}
+            style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate-400)', fontSize: 16 }}
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       {showCustomize && (
         <div className="card" style={{ marginBottom: 24 }}>
@@ -273,9 +307,55 @@ export default function ContactsPage() {
       )}
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--slate-400)', fontSize: 14, marginBottom: 24 }}>
-          <div className="spinner" />
-          Looking up contacts...
+        <div>
+          <div style={{ fontSize: 13, color: 'var(--slate-400)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="spinner" />
+            Finding contacts at {dossier?.brand_name}...
+          </div>
+          <div className="contacts-grid">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="contact-card" style={{ opacity: 0.5 }}>
+                <div style={{ height: 12, width: '40%', background: 'var(--slate-200)', borderRadius: 4, marginBottom: 10 }} />
+                <div style={{ height: 16, width: '70%', background: 'var(--slate-200)', borderRadius: 4, marginBottom: 8 }} />
+                <div style={{ height: 12, width: '90%', background: 'var(--slate-200)', borderRadius: 4, marginBottom: 6 }} />
+                <div style={{ height: 12, width: '60%', background: 'var(--slate-200)', borderRadius: 4 }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!loading && contacts.every(c => c.placeholder) && (
+        <div className="data-warning" style={{ marginBottom: 24 }}>
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" strokeWidth="2"/>
+            <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" strokeLinecap="round"/>
+            <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-default)' }}>No contacts found in Lusha</div>
+            <div style={{ fontSize: 13, color: 'var(--slate-500)', lineHeight: 1.5 }}>
+              This may be a subsidiary brand — try searching the parent company (e.g. L&apos;Oréal for Kérastase, Estée Lauder for MAC).
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              <a
+                href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent((dossier?.brand_name ?? '') + ' decision maker')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-primary btn-sm"
+              >
+                Search on LinkedIn ↗
+              </a>
+              <a
+                href={`https://www.linkedin.com/sales/search/people?query=${encodeURIComponent(dossier?.brand_name ?? '')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-secondary btn-sm"
+              >
+                Search Sales Navigator ↗
+              </a>
+            </div>
+          </div>
         </div>
       )}
 
@@ -283,7 +363,12 @@ export default function ContactsPage() {
         <>
           {sortedDepts.map(dept => (
             <div key={dept} style={{ marginBottom: 24 }}>
-              <div className="section-label">{dept}</div>
+              <div className="section-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {dept}
+                <span style={{ fontSize: 11, fontWeight: 500, background: '#050849', color: '#fff', borderRadius: 10, padding: '1px 7px' }}>
+                  {grouped[dept].length}
+                </span>
+              </div>
               <div className="contacts-grid">
                 {grouped[dept].map((contact, i) => (
                   <ContactCard
@@ -291,7 +376,11 @@ export default function ContactsPage() {
                     contact={contact}
                     selected={selectedContact?.name === contact.name}
                     onSelect={() => setSelectedContact(contact)}
-                    lastContacted={contactHistory.find(h => h.contact_role === contact.role && contact.name.includes(h.contact_role.split(' ')[0]))?.sent_at}
+                    lastContacted={
+                      contactHistory
+                        .filter(h => h.contact_role === contact.role)
+                        .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())[0]?.sent_at
+                    }
                     callLogged={loggedCalls.has(contact.contactId ?? contact.name)}
                     loggingCall={loggingCall === (contact.contactId ?? contact.name)}
                     onLogCall={() => handleLogCall(contact)}
@@ -326,48 +415,93 @@ function ContactCard({ contact, selected, onSelect, lastContacted, callLogged, l
   loggingCall?: boolean
   onLogCall: () => void
 }) {
+  const [revealing, setRevealing] = useState(false)
+  const [email, setEmail] = useState(contact.email ?? '')
+  const [phone, setPhone] = useState(contact.phone ?? '')
+
+  async function handleReveal(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!contact.contactId || email) return
+    setRevealing(true)
+    try {
+      const res = await fetch('/api/lookup-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brand_name: '',
+          enrich_id: contact.contactId
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEmail(data.email)
+        setPhone(data.phone)
+        contact.email = data.email
+        contact.phone = data.phone
+      }
+    } catch {
+      console.error('Reveal failed')
+    } finally {
+      setRevealing(false)
+    }
+  }
+
   return (
     <div
-      onClick={onSelect}
+      onClick={e => { e.stopPropagation(); onSelect() }}
       className="contact-card"
       style={{
         cursor: 'pointer',
-        borderColor: selected ? 'var(--black)' : lastContacted ? 'var(--green-300)' : undefined,
-        background: selected ? 'var(--slate-100)' : lastContacted ? 'var(--green-100)' : undefined,
+        borderColor: selected ? 'var(--black)' : undefined,
+        borderLeft: lastContacted && !selected ? '3px solid var(--green-400)' : undefined,
+        background: selected ? 'var(--slate-100)' : lastContacted ? '#f0faf5' : undefined,
         transition: 'all var(--dur-fast) var(--ease-out)'
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div className="contact-role" style={{ fontSize: 11 }}>{contact.role}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {lastContacted && (
-            <span style={{ fontSize: 11, color: 'var(--green-400)', fontWeight: 500, background: 'var(--green-100)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--green-300)' }}>
-              Contacted {new Date(lastContacted).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-            </span>
-          )}
-          {!lastContacted && !contact.verified && (
-            <span style={{ fontSize: 11, color: 'var(--orange-400)' }}>Unverified</span>
-          )}
-        </div>
+        {lastContacted && (
+          <span style={{ fontSize: 11, color: 'var(--green-400)', fontWeight: 500, background: 'var(--green-100)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--green-300)' }}>
+            Contacted {new Date(lastContacted).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </span>
+        )}
       </div>
+
       <div className="contact-name">{contact.name}</div>
-      {contact.email && (
+
+      {email ? (
         <div className="contact-line">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <rect x="2" y="4" width="20" height="16" rx="2" strokeWidth="2"/>
             <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" strokeWidth="2"/>
           </svg>
-          {contact.email}
+          {email}
         </div>
-      )}
-      {contact.phone && (
+      ) : contact.contactId && !contact.placeholder ? (
+        <button
+          onClick={handleReveal}
+          disabled={revealing}
+          style={{
+            marginTop: 6, fontSize: 12, fontWeight: 500, padding: '4px 10px',
+            borderRadius: 'var(--radius-xs)', cursor: 'pointer',
+            border: '1px solid var(--brand-200)',
+            background: 'var(--brand-100)', color: 'var(--brand-400)',
+            display: 'inline-flex', alignItems: 'center', gap: 5
+          }}
+        >
+          {revealing ? 'Revealing...' : '✦ Reveal email & phone'}
+        </button>
+      ) : null}
+
+      {phone && (
         <div className="contact-line">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.06 6.06l.91-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" strokeWidth="2"/>
           </svg>
-          {contact.phone}
+          {phone}
         </div>
       )}
+
       {contact.linkedin && (
         <a
           href={contact.linkedin}
