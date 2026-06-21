@@ -578,7 +578,7 @@ export default function Dashboard() {
       <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, borderBottom: '1px solid var(--black-100)' }}>
 
       {/* Left column (60%): greeting, metrics, follow-up */}
-      <div style={{ flex: '0 0 60%', padding: '28px 36px 20px', borderRight: '1px solid var(--black-100)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: '0 0 60%', padding: '28px 36px 16px', borderRight: '1px solid var(--black-100)', display: 'flex', flexDirection: 'column' }}>
 
         {showOnboarding && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#050849', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: 24 }}>
@@ -733,8 +733,8 @@ export default function Dashboard() {
       </div>
 
       {/* Right column (40%): Team Activity — independently scrollable */}
-      <div style={{ flex: '0 0 40%', overflowY: 'auto', padding: '32px 32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ flex: '0 0 40%', padding: '24px 28px 0', marginBottom: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div className="section-label">Team Activity</div>
           <button
             onClick={() => {
@@ -749,6 +749,7 @@ export default function Dashboard() {
             {loadingActivity ? 'Loading…' : 'Refresh'}
           </button>
         </div>
+        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
         {loadingActivity && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate-400)', fontSize: 13, padding: '12px 0' }}>
             <div className="spinner" /> Loading activity…
@@ -782,12 +783,13 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+        </div>{/* end scrollable activity */}
       </div>
 
       </div>{/* end top section */}
 
-      {/* ── Bottom section: intelligence tabs + pipeline link (full width) ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '14px 36px 0' }}>
+      {/* ── Bottom section: intelligence tabs ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '8px 36px 0' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0 }}>
           <div className="role-row" style={{ margin: 0 }}>

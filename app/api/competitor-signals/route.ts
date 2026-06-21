@@ -59,6 +59,21 @@ Return 6-8 of the most relevant signals as valid JSON only. No preamble, no mark
     }
 
     const signals = JSON.parse(jsonMatch[0])
+
+    signals.sort((a: { date?: string }, b: { date?: string }) => {
+      const parse = (d?: string) => {
+        if (!d) return null
+        const dt = new Date(`1 ${d}`)
+        return isNaN(dt.getTime()) ? null : dt
+      }
+      const da = parse(a.date)
+      const db = parse(b.date)
+      if (da && db) return db.getTime() - da.getTime()
+      if (da) return -1
+      if (db) return 1
+      return 0
+    })
+
     return NextResponse.json({ success: true, signals })
 
   } catch (error) {
