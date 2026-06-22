@@ -1,5 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+async function verifyRefreshToken(refreshToken: string): Promise<boolean> {
+  if (!refreshToken) return false
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.GMAIL_CLIENT_ID ?? '',
+        client_secret: process.env.GMAIL_CLIENT_SECRET ?? '',
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 // Convert a datetime-local string ("2024-06-20T10:00") interpreted in the given
 // IANA timezone into a UTC Date. Works without external dependencies.
 function localToUTC(localStr: string, timezone: string): Date {
@@ -29,10 +48,19 @@ export async function POST(request: NextRequest) {
     const refreshToken = request.cookies.get('gmail_refresh_token')?.value ?? ''
 
     const body = await request.json()
-    const { to, cc, bcc, subject, body: emailBody, brand_name, contact_name, scheduled_at_local, timezone } = body
+    const { to, cc, bcc, subject, body: emailBody, brand_name, contact_name, scheduled_at_local, timezone, sent_by } = body
 
     if (!to || !subject || !emailBody || !scheduled_at_local) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    if (!refreshToken) {
+      return NextResponse.json({ error: 'Gmail session expired — please re-authenticate before scheduling', reauth: true }, { status: 401 })
+    }
+
+    const tokenValid = await verifyRefreshToken(refreshToken)
+    if (!tokenValid) {
+      return NextResponse.json({ error: 'Gmail session expired — please re-authenticate before scheduling', reauth: true }, { status: 401 })
     }
 
     const scheduledAt = localToUTC(scheduled_at_local, timezone ?? 'Australia/Sydney')
@@ -42,19 +70,19 @@ export async function POST(request: NextRequest) {
       const { sql } = await import('@vercel/postgres')
       await sql`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone)
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by)
         VALUES
           (${to}, ${cc ?? ''}, ${bcc ?? ''}, ${subject}, ${emailBody},
            ${brand_name ?? ''}, ${contact_name ?? ''}, ${scheduledAt.toISOString()},
-           ${accessToken}, ${refreshToken}, ${timezone ?? 'Australia/Sydney'})
+           ${accessToken}, ${refreshToken}, ${timezone ?? 'Australia/Sydney'}, ${sent_by ?? ''})
       `
     } else {
       const db = getLocalDb()
       db.prepare(`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken, timezone ?? 'Australia/Sydney')
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken, timezone ?? 'Australia/Sydney', sent_by ?? '')
     }
 
     return NextResponse.json({ success: true, scheduled_at: scheduledAt.toISOString() })

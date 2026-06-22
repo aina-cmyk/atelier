@@ -98,6 +98,9 @@ export default function EmailPage() {
   const [selectedBullet, setSelectedBullet] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [hasCopied, setHasCopied] = useState(false)
+  const [copiedBullet, setCopiedBullet] = useState<string | null>(null)
+  const [attachments, setAttachments] = useState<{ name: string; type: string; data: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [linkedInSending, setLinkedInSending] = useState(false)
   const [linkedInSent, setLinkedInSent] = useState(false)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
@@ -120,6 +123,8 @@ export default function EmailPage() {
   const tabDataRef = useRef<Map<string, TabSnapshot>>(new Map())
   const tabsRestoredRef = useRef(false)
   const pendingContactForTabRef = useRef<Contact | null>(null)
+  // Set only from localStorage load — never cleared by tab switching — used as send-time fallback
+  const followUpContextRef = useRef<{original_subject?: string; contact_name?: string; date_sent?: string} | null>(null)
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
   const pendingSelectionRef = useRef<[number, number] | null>(null)
 
@@ -324,10 +329,13 @@ export default function EmailPage() {
       setActiveTemplate(JSON.parse(storedTemplate))
       localStorage.removeItem('email_template')
     }
-    const followUpContext = localStorage.getItem('follow_up_context')
-    if (followUpContext) {
-      setFollowUpContext(JSON.parse(followUpContext))
-      localStorage.removeItem('follow_up_context')
+    const followUpContextRaw = localStorage.getItem('follow_up_context')
+    console.log('[follow-up] localStorage follow_up_context at load:', followUpContextRaw)
+    if (followUpContextRaw) {
+      const parsed = JSON.parse(followUpContextRaw)
+      followUpContextRef.current = parsed
+      setFollowUpContext(parsed)
+      // Keep in localStorage — used as fallback at send time in case tab switching clears state
     }
     const pitchBullet = localStorage.getItem('pitch_bullet')
     if (pitchBullet) {
@@ -708,11 +716,13 @@ export default function EmailPage() {
           contact_name: contact?.name ?? '',
           scheduled_at_local: scheduledAt,
           timezone: scheduleTimezone,
+          sent_by: localStorage.getItem('atelier_user_name') ?? '',
         }),
       })
       const data = await res.json()
+      if (data.reauth) { setNeedsAuth(true); setShowScheduleModal(false); return }
       if (!res.ok || !data.success) {
-        setError('Failed to schedule email. Please try again.')
+        setError(data.error ?? 'Failed to schedule email. Please try again.')
         setShowScheduleModal(false)
         return
       }
@@ -724,6 +734,21 @@ export default function EmailPage() {
     } finally {
       setScheduling(false)
     }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    files.forEach(file => {
+      if (file.size > 10 * 1024 * 1024) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        const base64 = dataUrl.split(',')[1]
+        setAttachments(prev => [...prev, { name: file.name, type: file.type, data: base64 }])
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
   }
 
   async function handleSend() {
@@ -745,7 +770,8 @@ export default function EmailPage() {
           role: selectedRole,
           leadSource: localStorage.getItem('lead_source') ?? 'Outbound',
           senderName: localStorage.getItem('atelier_user_name') ?? '',
-          dossier
+          dossier,
+          attachments: attachments.length > 0 ? attachments : undefined
         })
       })
 
@@ -756,6 +782,25 @@ export default function EmailPage() {
 
       setSent(true)
       setShowModal(false)
+
+      const lsRaw = localStorage.getItem('follow_up_context')
+      const effectiveFollowUp = followUpContextRef.current ?? followUpContext ?? (lsRaw ? JSON.parse(lsRaw) : null)
+      console.log('[follow-up] at send time — ref:', followUpContextRef.current, 'state:', followUpContext, 'localStorage:', lsRaw, 'effective:', effectiveFollowUp)
+
+      if (effectiveFollowUp && dossier) {
+        console.log('[follow-up] calling /api/update-pipeline with:', { brand_name: dossier.brand_name, status: 'Follow-up 1' })
+        localStorage.removeItem('follow_up_context')
+        followUpContextRef.current = null
+        fetch('/api/update-pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brand_name: dossier.brand_name, status: 'Follow-up 1' }),
+        })
+          .then(r => r.json().then(body => console.log('[follow-up] update-pipeline response:', r.status, body)))
+          .catch(err => console.error('[follow-up] update-pipeline fetch error:', err))
+      } else {
+        console.log('[follow-up] skipping update-pipeline — no follow-up context or no dossier')
+      }
     } catch {
       setError('Something went wrong. Please try again.')
       setShowModal(false)
@@ -1278,7 +1323,8 @@ export default function EmailPage() {
                     position: 'absolute', bottom: 'calc(100% - 28px)', right: 10, marginBottom: 4,
                     background: '#fff', border: '1px solid var(--black-100)',
                     borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-400)',
-                    padding: '12px 16px', zIndex: 40, minWidth: 340, maxWidth: 480
+                    padding: '10px 12px', zIndex: 40, minWidth: 340, maxWidth: 480,
+                    maxHeight: 280, overflowY: 'auto'
                   }}>
                     {loadingPitch && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--slate-400)', fontSize: 13 }}>
@@ -1295,20 +1341,40 @@ export default function EmailPage() {
                             <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, lineHeight: 1.5 }}>
                               <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#050849', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
                               <span style={{ color: 'var(--text-default)', flex: 1 }}>{bullet}</span>
-                              <button
-                                onClick={() => { setSelectedBullet(bullet); setShowPitch(false); generateEmail(selectedRole, undefined, bullet) }}
-                                style={{
-                                  flexShrink: 0, fontSize: 11, fontWeight: 500,
-                                  padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
-                                  background: selectedBullet === bullet ? '#050849' : 'transparent',
-                                  color: selectedBullet === bullet ? '#fff' : 'var(--brand-400)',
-                                  border: '1px solid',
-                                  borderColor: selectedBullet === bullet ? '#050849' : 'var(--brand-200)',
-                                  whiteSpace: 'nowrap'
-                                }}
-                              >
-                                {selectedBullet === bullet ? 'In use ✓' : 'Use in email'}
-                              </button>
+                              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(bullet)
+                                    setCopiedBullet(bullet)
+                                    setTimeout(() => setCopiedBullet(b => b === bullet ? null : b), 2000)
+                                  }}
+                                  style={{
+                                    fontSize: 11, fontWeight: 500,
+                                    padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+                                    background: 'transparent',
+                                    color: copiedBullet === bullet ? 'var(--green-400)' : 'var(--slate-400)',
+                                    border: '1px solid',
+                                    borderColor: copiedBullet === bullet ? 'var(--green-300)' : 'var(--black-100)',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {copiedBullet === bullet ? 'Copied ✓' : 'Copy'}
+                                </button>
+                                <button
+                                  onClick={() => { setSelectedBullet(bullet); setShowPitch(false); generateEmail(selectedRole, undefined, bullet) }}
+                                  style={{
+                                    fontSize: 11, fontWeight: 500,
+                                    padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+                                    background: selectedBullet === bullet ? '#050849' : 'transparent',
+                                    color: selectedBullet === bullet ? '#fff' : 'var(--brand-400)',
+                                    border: '1px solid',
+                                    borderColor: selectedBullet === bullet ? '#050849' : 'var(--brand-200)',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {selectedBullet === bullet ? 'In use ✓' : 'Use in email'}
+                                </button>
+                              </div>
                             </li>
                           ))}
                         </ul>
@@ -1317,6 +1383,49 @@ export default function EmailPage() {
                     {!loadingPitch && (!recommendedRole || !pitchAngles[recommendedRole]) && (
                       <div style={{ fontSize: 13, color: 'var(--slate-400)' }}>No pitch angles yet</div>
                     )}
+                  </div>
+                )}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.png,.jpg,.jpeg,.pptx"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelect}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    fontSize: 12, padding: '4px 10px', cursor: 'pointer',
+                    background: 'transparent', color: 'var(--slate-400)',
+                    border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)',
+                    fontWeight: 500
+                  }}
+                >
+                  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                  Attach file
+                </button>
+                {attachments.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {attachments.map((a, i) => (
+                      <div key={i} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                        padding: '3px 8px', background: 'var(--black-50)',
+                        border: '1px solid var(--black-100)', borderRadius: 4,
+                        color: 'var(--text-default)'
+                      }}>
+                        <span>{a.name}</span>
+                        <button
+                          onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate-400)', padding: 0, fontSize: 15, lineHeight: 1 }}
+                        >×</button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1409,6 +1518,16 @@ export default function EmailPage() {
                 <div className="k">Subject</div>
                 <div className="v">{email.subject}</div>
               </div>
+              {attachments.length > 0 && (
+                <div className="summary-row">
+                  <div className="k">Attachments</div>
+                  <div className="v" style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {attachments.map((a, i) => (
+                      <span key={i} style={{ fontSize: 12, padding: '2px 7px', background: 'var(--black-50)', border: '1px solid var(--black-100)', borderRadius: 4 }}>{a.name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ marginTop: 16 }}>
                 <div className="field-label" style={{ marginBottom: 8 }}>Email body</div>
                 <div className="email-full">{email.body}</div>

@@ -27,10 +27,15 @@ export async function POST(request: NextRequest) {
     })
 
     const rows = response.data.values ?? []
+    console.log('[update-pipeline] received brand_name:', brand_name, 'status:', status)
+    console.log('[update-pipeline] total rows in sheet:', rows.length)
+    console.log('[update-pipeline] first 5 brand names:', rows.slice(0, 5).map(r => r[0]))
+
     const rowIndex = rows.findIndex(row => row[0]?.toLowerCase() === brand_name?.toLowerCase())
+    console.log('[update-pipeline] matched rowIndex:', rowIndex, rowIndex !== -1 ? `(sheet row ${rowIndex + 1}, brand="${rows[rowIndex][0]}")` : '(no match)')
 
     if (rowIndex === -1) {
-      return NextResponse.json({ error: 'Brand not found in pipeline' }, { status: 404 })
+      return NextResponse.json({ error: 'Brand not found in pipeline', brand_name, total_rows: rows.length }, { status: 404 })
     }
 
     await sheets.spreadsheets.values.update({
@@ -40,7 +45,8 @@ export async function POST(request: NextRequest) {
       requestBody: { values: [[status]] }
     })
 
-    return NextResponse.json({ success: true })
+    console.log('[update-pipeline] successfully updated row', rowIndex + 1, 'column O to', status)
+    return NextResponse.json({ success: true, row: rowIndex + 1, brand_name: rows[rowIndex][0] })
 
   } catch (error) {
     console.error('Update pipeline error:', error)

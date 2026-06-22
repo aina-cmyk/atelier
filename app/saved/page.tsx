@@ -15,6 +15,7 @@ interface SavedBrand {
 export default function SavedBrandsPage() {
   const [brands, setBrands] = useState<SavedBrand[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingBrand, setLoadingBrand] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export default function SavedBrandsPage() {
   }
 
   async function handleResearch(brandName: string) {
+    setLoadingBrand(brandName)
     try {
       const res = await fetch('/api/research', {
         method: 'POST',
@@ -58,6 +60,8 @@ export default function SavedBrandsPage() {
       }
     } catch {
       console.error('Failed to research brand')
+    } finally {
+      setLoadingBrand(null)
     }
   }
 
@@ -91,7 +95,12 @@ export default function SavedBrandsPage() {
             <div key={i} className="card-hair" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-default)', marginBottom: 2 }}>{brand.brand_name}</div>
+                  <div
+                    onClick={() => handleResearch(brand.brand_name)}
+                    style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-default)', marginBottom: 2, cursor: loadingBrand === brand.brand_name ? 'wait' : 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--black-200)', display: 'inline-block' }}
+                  >
+                    {loadingBrand === brand.brand_name ? '…' : brand.brand_name}
+                  </div>
                   <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)' }}>{brand.category.split(/[,(]/)[0].trim()}</div>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--slate-500)', lineHeight: 1.4 }}>{brand.reason}</div>

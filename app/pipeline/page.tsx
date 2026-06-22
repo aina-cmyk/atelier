@@ -34,6 +34,27 @@ export default function PipelinePage() {
   const [editingNotes, setEditingNotes] = useState<string | null>(null)
   const [notesValue, setNotesValue] = useState<string>('')
   const [savingNotes, setSavingNotes] = useState(false)
+  const [loadingBrand, setLoadingBrand] = useState<string | null>(null)
+
+  async function handleResearch(brandName: string) {
+    setLoadingBrand(brandName)
+    try {
+      const res = await fetch('/api/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brand_name: brandName })
+      })
+      const data = await res.json()
+      if (data.success) {
+        localStorage.setItem('current_dossier', JSON.stringify(data.dossier))
+        router.push('/dossier')
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setLoadingBrand(null)
+    }
+  }
 
   useEffect(() => {
     document.title = 'Pipeline — Atelier'
@@ -272,7 +293,14 @@ export default function PipelinePage() {
                     router.push('/')
                   }}
                 >
-                  <td className="cell-brand">{lead.brand_name}</td>
+                  <td className="cell-brand">
+                    <span
+                      onClick={e => { e.stopPropagation(); handleResearch(lead.brand_name) }}
+                      style={{ cursor: loadingBrand === lead.brand_name ? 'wait' : 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--black-200)', fontWeight: 600 }}
+                    >
+                      {loadingBrand === lead.brand_name ? '…' : lead.brand_name}
+                    </span>
+                  </td>
                   <td className="cell-score" style={{ color: getScoreColour(lead.icp_score) }}>
                     {lead.icp_score}
                   </td>

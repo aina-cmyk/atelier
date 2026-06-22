@@ -189,6 +189,26 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    async function fetchPipeline() {
+      try {
+        const [pipelineRes, scheduledRes] = await Promise.all([
+          fetch('/api/pipeline'),
+          fetch('/api/schedule-email'),
+        ])
+        const pipelineData = await pipelineRes.json()
+        const scheduledData = await scheduledRes.json()
+        if (scheduledData.success) setScheduledEmails(scheduledData.emails ?? [])
+        if (pipelineData.success) setLeads(pipelineData.leads)
+      } catch {}
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') fetchPipeline()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [])
+
+  useEffect(() => {
     const history = JSON.parse(localStorage.getItem('search_history') ?? '[]') as string[]
     setSearchHistory(history)
   }, [])
@@ -196,8 +216,9 @@ export default function Dashboard() {
   useEffect(() => {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const RESOLVED_STATUSES = new Set(['Follow-up 1', 'Follow-up 2', 'Replied', 'Closed'])
     const overdue = leads.filter(lead => {
-      if (lead.status !== 'Sent') return false
+      if (lead.status !== 'Sent' || RESOLVED_STATUSES.has(lead.status)) return false
       const parts = lead.date_added.split('/')
       if (parts.length !== 3) return false
       const date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
@@ -783,7 +804,22 @@ export default function Dashboard() {
                   {activityIcon(item.icon)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 3 }}>{item.text}</div>
+                  <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 3 }}>
+                    {item.brand ? (() => {
+                      const idx = item.text.lastIndexOf(item.brand)
+                      if (idx === -1) return item.text
+                      return (
+                        <>
+                          {item.text.slice(0, idx)}
+                          <span
+                            onClick={() => handleResearch(item.brand)}
+                            style={{ cursor: searchedBrand === item.brand && loading ? 'wait' : 'pointer', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--black-200)' }}
+                          >{item.brand}</span>
+                          {item.text.slice(idx + item.brand.length)}
+                        </>
+                      )
+                    })() : item.text}
+                  </div>
                   <span style={{ fontSize: 11, color: 'var(--slate-400)' }}>{relativeDate(item.date)}</span>
                 </div>
               </div>

@@ -68,7 +68,7 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
       signals + '\n\n' +
       (pitchBullet ? `PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"${pitchBullet}"\n\n` : '') +
       'INSTRUCTIONS\n' +
-      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient by first name.\n\n' +
+      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient by first name. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
       'OUTPUT FORMAT\n' +
       'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
       '{ "subject": "string", "body": "string" }'
@@ -93,7 +93,8 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
     'Paragraph 2 (2-3 sentences): Connect that signal to why Atelier is relevant. Reference the executives specific responsibility. Introduce Atelier naturally — one prestige credential only.\n' +
     'Paragraph 3 (1 sentence): Soft CTA — offer a brief call, no pressure.\n\n' +
     'TONE: Conversational but professional. Write like a human, not a press release. No bullet points. No jargon. Address recipient by first name.\n' +
-    'SUBJECT LINE: Specific and curiosity-driven. Reference the brand or a signal. Under 8 words.\n\n' +
+    'SUBJECT LINE: Specific and curiosity-driven. Reference the brand or a signal. Under 8 words.\n' +
+    'REQUIREMENT: You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
     'OUTPUT FORMAT\n' +
     'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
     '{ "subject": "string", "body": "string" }'
@@ -102,9 +103,54 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
 function runTrustGate(body: string, dossier: Record<string, unknown>): boolean {
   const bodyLower = body.toLowerCase()
   const brandName = (dossier.brand_name as string)?.toLowerCase() ?? ''
-  const words = brandName.split(' ').filter(w => w.length > 3)
   if (brandName.length <= 2) return true
-  return words.some(word => bodyLower.includes(word))
+
+  // Full brand name present
+  if (bodyLower.includes(brandName)) return true
+
+  // First word of brand name if longer than 4 chars
+  const firstWord = brandName.split(/\s+/)[0]
+  if (firstWord.length > 4 && bodyLower.includes(firstWord)) return true
+
+  // Any retailer name from the dossier
+  const retailers = (dossier.retailers as { name: string }[]) ?? []
+  if (retailers.some(r => r.name && bodyLower.includes(r.name.toLowerCase()))) return true
+
+  return false
+}
+
+async function generateOnce(prompt: string, dossier: Record<string, unknown>): Promise<{
+  email: { subject: string; body: string } | null
+  passed: boolean
+  cost: number
+  error?: string
+}> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1500,
+    messages: [{ role: 'user', content: prompt }]
+  })
+
+  const cost =
+    (response.usage.input_tokens / 1_000_000) * RATE_PER_MILLION_INPUT +
+    (response.usage.output_tokens / 1_000_000) * RATE_PER_MILLION_OUTPUT
+
+  const rawText = response.content
+    .filter(block => block.type === 'text')
+    .map(block => (block as { type: 'text'; text: string }).text)
+    .join('')
+
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return { email: null, passed: false, cost, error: 'malformed response' }
+
+  let email: { subject: string; body: string }
+  try {
+    email = JSON.parse(jsonMatch[0])
+  } catch {
+    return { email: null, passed: false, cost, error: 'parse error' }
+  }
+
+  return { email, passed: runTrustGate(email.body, dossier), cost }
 }
 
 export async function POST(request: NextRequest) {
@@ -146,52 +192,32 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildEmailPrompt(dossier, role, contact_name, template, pitch_bullet, follow_up)
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
-    })
+    let result = await generateOnce(prompt, dossier)
+    let totalCost = result.cost
+    console.log('Email generation attempt 1: $' + result.cost.toFixed(6) + ' USD, trust gate passed:', result.passed)
 
-    const inputTokens = response.usage.input_tokens
-    const outputTokens = response.usage.output_tokens
-    const estimatedCost =
-      (inputTokens / 1_000_000) * RATE_PER_MILLION_INPUT +
-      (outputTokens / 1_000_000) * RATE_PER_MILLION_OUTPUT
-
-    console.log('Email generation cost: $' + estimatedCost.toFixed(6) + ' USD')
-
-    const rawText = response.content
-      .filter(block => block.type === 'text')
-      .map(block => (block as { type: 'text'; text: string }).text)
-      .join('')
-
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json(
-        { error: 'Email generation failed — malformed response' },
-        { status: 500 }
-      )
+    if (result.error) {
+      return NextResponse.json({ error: 'Email generation failed — ' + result.error }, { status: 500 })
     }
 
-    let email
-    try {
-      email = JSON.parse(jsonMatch[0])
-    } catch {
-      return NextResponse.json(
-        { error: 'Email generation failed — could not parse response' },
-        { status: 500 }
-      )
+    if (!result.passed) {
+      console.log('Trust gate failed on attempt 1, retrying silently...')
+      const retry = await generateOnce(prompt, dossier)
+      totalCost += retry.cost
+      console.log('Email generation attempt 2: $' + retry.cost.toFixed(6) + ' USD, trust gate passed:', retry.passed)
+      if (!retry.error) result = retry
     }
 
-    const passed = runTrustGate(email.body, dossier)
-    if (!passed) {
+    console.log('Total email generation cost: $' + totalCost.toFixed(6) + ' USD')
+
+    if (!result.passed) {
       return NextResponse.json({
         success: false,
         warning: 'Insufficient brand data to personalise — verify research and retry.'
       })
     }
 
-    return NextResponse.json({ success: true, email })
+    return NextResponse.json({ success: true, email: result.email })
 
   } catch (error) {
     console.error('Email route error:', error)

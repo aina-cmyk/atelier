@@ -415,8 +415,8 @@ export default function DossierPage() {
               <span style={{ color: 'var(--text-default)', fontWeight: 500 }}>{dossier?.brand_name}</span>
             </div>
           ) : (
-            <button onClick={() => router.push('/')} className="btn btn-ghost btn-sm">
-              ← Dashboard
+            <button onClick={() => router.push('/portfolio')} className="btn btn-ghost btn-sm">
+              ← Brand Search
             </button>
           )}
         </div>

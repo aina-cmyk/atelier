@@ -13,6 +13,7 @@ interface ScheduledEmail {
   scheduled_at: string
   gmail_access_token: string
   gmail_refresh_token: string
+  sent_by: string
 }
 
 // Verbose token refresh — logs every detail so we can diagnose 400s from Google
@@ -215,10 +216,9 @@ export async function GET(request: NextRequest) {
         }
       } catch {}
 
-      // Update pipeline status
       if (email.brand_name) {
+        const base = process.env.PRODUCTION_URL ?? 'http://localhost:3000'
         try {
-          const base = process.env.PRODUCTION_URL ?? 'http://localhost:3000'
           await fetch(`${base}/api/save-to-sheets`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -228,9 +228,23 @@ export async function GET(request: NextRequest) {
               status: 'Sent', lead_source: 'Scheduled',
               website: '', revenue_estimate: '', retailers: [],
               category: '', icp_score: 0, score_band: '', signals: [], target_role: '',
+              sent_by: email.sent_by ?? '',
             }),
           })
-        } catch {}
+          console.log(`[cron] Email ${email.id}: save-to-sheets done`)
+        } catch (e) {
+          console.error(`[cron] Email ${email.id}: save-to-sheets failed:`, e)
+        }
+        try {
+          await fetch(`${base}/api/update-pipeline`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brand_name: email.brand_name, status: 'Sent' }),
+          })
+          console.log(`[cron] Email ${email.id}: update-pipeline done`)
+        } catch (e) {
+          console.error(`[cron] Email ${email.id}: update-pipeline failed:`, e)
+        }
       }
 
       console.log(`[cron] Done: email ${email.id} → ${email.to_email} (msgId: ${messageId!})`)

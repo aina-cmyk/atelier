@@ -54,17 +54,22 @@ export async function GET(request: NextRequest) {
       sameSite: 'lax'
     })
 
+    const isProd = !!process.env.PRODUCTION_URL
     response.cookies.set('gmail_access_token', tokens.access_token ?? '', {
       httpOnly: true,
       maxAge: 3600,
-      path: '/'
+      path: '/',
+      secure: isProd,
+      sameSite: 'lax'
     })
 
     if (tokens.refresh_token) {
-      response.cookies.set(`gmail_refresh_token_${userEmail}`, tokens.refresh_token, {
+      response.cookies.set('gmail_refresh_token', tokens.refresh_token, {
         httpOnly: true,
-        maxAge: 60 * 60 * 24 * 30,
-        path: '/'
+        maxAge: 60 * 60 * 24 * 365,
+        path: '/',
+        secure: isProd,
+        sameSite: 'lax'
       })
     }
 

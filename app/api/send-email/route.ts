@@ -13,21 +13,66 @@ function getOAuthClient() {
   )
 }
 
-function makeEmailBody(to: string, subject: string, body: string, cc?: string, bcc?: string): string {
+interface Attachment {
+  name: string
+  type: string
+  data: string // base64
+}
+
+function toBase64Url(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function makeEmailBody(to: string, subject: string, body: string, attachments?: Attachment[], cc?: string, bcc?: string): string {
   const ccAddresses = cc ? cc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
   const bccAddresses = bcc ? bcc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`
-  const headers = [
+
+  if (!attachments || attachments.length === 0) {
+    const lines = [
+      `To: ${to}`,
+      ...(ccAddresses ? [`Cc: ${ccAddresses}`] : []),
+      ...(bccAddresses ? [`Bcc: ${bccAddresses}`] : []),
+      `Subject: ${encodedSubject}`,
+      'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: quoted-printable',
+      '',
+      body,
+    ]
+    return toBase64Url(Buffer.from(lines.join('\r\n')))
+  }
+
+  const boundary = `----=_Boundary_${Date.now().toString(36)}`
+  const parts: string[] = [
     `To: ${to}`,
     ...(ccAddresses ? [`Cc: ${ccAddresses}`] : []),
     ...(bccAddresses ? [`Bcc: ${bccAddresses}`] : []),
     `Subject: ${encodedSubject}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
     'Content-Type: text/plain; charset=utf-8',
     'Content-Transfer-Encoding: quoted-printable',
     '',
-    body
+    body,
   ]
-  return Buffer.from(headers.join('\n')).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+  for (const att of attachments) {
+    const safeName = `=?UTF-8?B?${Buffer.from(att.name, 'utf-8').toString('base64')}?=`
+    const chunks = att.data.match(/.{1,76}/g)?.join('\r\n') ?? att.data
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${att.type || 'application/octet-stream'}; name="${safeName}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${safeName}"`,
+      '',
+      chunks,
+    )
+  }
+
+  parts.push(`--${boundary}--`)
+  return toBase64Url(Buffer.from(parts.join('\r\n')))
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<string | null> {
@@ -79,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { to, cc, subject, emailBody, contactName, leadSource, senderName } = body
+    const { to, cc, bcc, subject, emailBody, contactName, leadSource, senderName, attachments } = body
 
     if (!to || !subject || !emailBody) {
       return NextResponse.json(
@@ -88,7 +133,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const raw = makeEmailBody(to, subject, emailBody, cc)
+    const raw = makeEmailBody(to, subject, emailBody, attachments, cc, bcc)
     let newAccessToken: string | null = null
 
     // If no access token but refresh token exists, refresh before first attempt
@@ -178,7 +223,7 @@ export async function POST(request: NextRequest) {
     if (newAccessToken) {
       response.cookies.set('gmail_access_token', newAccessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: !!process.env.PRODUCTION_URL,
         sameSite: 'lax',
         maxAge: 3600,
         path: '/',
