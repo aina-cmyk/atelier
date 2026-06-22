@@ -325,11 +325,11 @@ export default function PortfolioPage() {
             )}
 
             {/* Portfolio rows */}
-            {visible.map(d => {
+            {visible.map((d, i) => {
               const active = selected === d.brand_name
               return (
                 <div
-                  key={d.brand_name}
+                  key={`${i}-${d.brand_name}`}
                   onClick={() => pickDossier(d)}
                   style={{
                     padding: '10px 16px 10px 14px',
@@ -576,8 +576,8 @@ export default function PortfolioPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 2 }}>
-            {queue.map(item => (
-              <div key={item.brand_name} style={{
+            {queue.map((item, index) => (
+              <div key={`${index}-${item.brand_name}`} style={{
                 flexShrink: 0, width: 210,
                 border: '0.5px solid var(--black-100)',
                 borderRadius: 8, padding: '10px 12px',

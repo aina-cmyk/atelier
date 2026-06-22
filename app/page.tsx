@@ -64,6 +64,7 @@ interface Lead {
   status: string
   date_added: string
   contact_name: string
+  target_role: string
   email_subject: string
 }
 
@@ -115,7 +116,7 @@ export default function Dashboard() {
   const [userName, setUserName] = useState('')
   const [activityItems, setActivityItems] = useState<ActivityItem[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
-  const [scheduledEmails, setScheduledEmails] = useState<{id: number; to_email: string; subject: string; brand_name: string; contact_name: string; scheduled_at: string}[]>([])
+  const [scheduledEmails, setScheduledEmails] = useState<{id: number; to_email: string; subject: string; brand_name: string; contact_name: string; scheduled_at: string; timezone?: string}[]>([])
   const router = useRouter()
 
   // Full-height layout: override .main overflow while on dashboard
@@ -667,6 +668,12 @@ export default function Dashboard() {
                           const data = await res.json()
                           if (data.success) {
                             localStorage.setItem('current_dossier', JSON.stringify(data.dossier))
+                            localStorage.removeItem('selected_contact')
+                            localStorage.setItem('selected_contact', JSON.stringify({
+                              name: lead.contact_name,
+                              role: lead.target_role,
+                              email: ''
+                            }))
                             localStorage.setItem('follow_up_context', JSON.stringify({
                               original_subject: lead.email_subject,
                               contact_name: lead.contact_name,
@@ -706,7 +713,7 @@ export default function Dashboard() {
                       To: {e.to_email}{e.contact_name ? ` · ${e.contact_name}` : ''}
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 500, color: '#050849', marginTop: 3 }}>
-                      📅 {new Date(e.scheduled_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                      📅 {new Date(e.scheduled_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} {(() => { try { return new Intl.DateTimeFormat('en-AU', { timeZone: e.timezone ?? 'Australia/Sydney', timeZoneName: 'short' }).formatToParts(new Date(e.scheduled_at)).find(p => p.type === 'timeZoneName')?.value ?? 'AEST' } catch { return 'AEST' } })()}
                     </div>
                   </div>
                   <button
@@ -749,7 +756,7 @@ export default function Dashboard() {
             {loadingActivity ? 'Loading…' : 'Refresh'}
           </button>
         </div>
-        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
         {loadingActivity && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate-400)', fontSize: 13, padding: '12px 0' }}>
             <div className="spinner" /> Loading activity…

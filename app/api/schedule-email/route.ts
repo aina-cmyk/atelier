@@ -42,19 +42,19 @@ export async function POST(request: NextRequest) {
       const { sql } = await import('@vercel/postgres')
       await sql`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token)
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone)
         VALUES
           (${to}, ${cc ?? ''}, ${bcc ?? ''}, ${subject}, ${emailBody},
            ${brand_name ?? ''}, ${contact_name ?? ''}, ${scheduledAt.toISOString()},
-           ${accessToken}, ${refreshToken})
+           ${accessToken}, ${refreshToken}, ${timezone ?? 'Australia/Sydney'})
       `
     } else {
       const db = getLocalDb()
       db.prepare(`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken)
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken, timezone ?? 'Australia/Sydney')
     }
 
     return NextResponse.json({ success: true, scheduled_at: scheduledAt.toISOString() })
@@ -70,7 +70,7 @@ export async function GET() {
     if (isVercel) {
       const { sql } = await import('@vercel/postgres')
       const result = await sql`
-        SELECT id, to_email, cc, subject, brand_name, contact_name, scheduled_at
+        SELECT id, to_email, cc, subject, brand_name, contact_name, scheduled_at, timezone
         FROM scheduled_emails
         WHERE sent = false
         ORDER BY scheduled_at ASC
@@ -79,7 +79,7 @@ export async function GET() {
     } else {
       const db = getLocalDb()
       const emails = db.prepare(`
-        SELECT id, to_email, cc, subject, brand_name, contact_name, scheduled_at
+        SELECT id, to_email, cc, subject, brand_name, contact_name, scheduled_at, timezone
         FROM scheduled_emails
         WHERE sent = 0
         ORDER BY scheduled_at ASC

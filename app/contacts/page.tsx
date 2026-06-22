@@ -452,8 +452,9 @@ function ContactCard({ contact, selected, onSelect, lastContacted, callLogged, l
       className="contact-card"
       style={{
         cursor: 'pointer',
-        borderColor: selected ? 'var(--black)' : undefined,
-        borderLeft: lastContacted && !selected ? '3px solid var(--green-400)' : undefined,
+        borderLeftWidth: lastContacted && !selected ? 3 : undefined,
+        borderLeftStyle: lastContacted && !selected ? 'solid' : undefined,
+        borderLeftColor: selected ? 'var(--black)' : lastContacted ? 'var(--green-400)' : undefined,
         background: selected ? 'var(--slate-100)' : lastContacted ? '#f0faf5' : undefined,
         transition: 'all var(--dur-fast) var(--ease-out)'
       }}
