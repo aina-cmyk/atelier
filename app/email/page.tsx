@@ -717,6 +717,7 @@ export default function EmailPage() {
           scheduled_at_local: scheduledAt,
           timezone: scheduleTimezone,
           sent_by: localStorage.getItem('atelier_user_name') ?? '',
+          dossier: dossier ?? undefined,
         }),
       })
       const data = await res.json()

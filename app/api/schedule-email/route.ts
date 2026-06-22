@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     const refreshToken = request.cookies.get('gmail_refresh_token')?.value ?? ''
 
     const body = await request.json()
-    const { to, cc, bcc, subject, body: emailBody, brand_name, contact_name, scheduled_at_local, timezone, sent_by } = body
+    const { to, cc, bcc, subject, body: emailBody, brand_name, contact_name, scheduled_at_local, timezone, sent_by, dossier } = body
 
     if (!to || !subject || !emailBody || !scheduled_at_local) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -66,23 +66,25 @@ export async function POST(request: NextRequest) {
     const scheduledAt = localToUTC(scheduled_at_local, timezone ?? 'Australia/Sydney')
 
     const { isVercel, getLocalDb } = await import('@/lib/db')
+    const dossierJson = dossier ? JSON.stringify(dossier) : ''
+
     if (isVercel) {
       const { sql } = await import('@vercel/postgres')
       await sql`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by)
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by, dossier_json)
         VALUES
           (${to}, ${cc ?? ''}, ${bcc ?? ''}, ${subject}, ${emailBody},
            ${brand_name ?? ''}, ${contact_name ?? ''}, ${scheduledAt.toISOString()},
-           ${accessToken}, ${refreshToken}, ${timezone ?? 'Australia/Sydney'}, ${sent_by ?? ''})
+           ${accessToken}, ${refreshToken}, ${timezone ?? 'Australia/Sydney'}, ${sent_by ?? ''}, ${dossierJson})
       `
     } else {
       const db = getLocalDb()
       db.prepare(`
         INSERT INTO scheduled_emails
-          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken, timezone ?? 'Australia/Sydney', sent_by ?? '')
+          (to_email, cc, bcc, subject, body, brand_name, contact_name, scheduled_at, gmail_access_token, gmail_refresh_token, timezone, sent_by, dossier_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(to, cc ?? '', bcc ?? '', subject, emailBody, brand_name ?? '', contact_name ?? '', scheduledAt.toISOString(), accessToken, refreshToken, timezone ?? 'Australia/Sydney', sent_by ?? '', dossierJson)
     }
 
     return NextResponse.json({ success: true, scheduled_at: scheduledAt.toISOString() })

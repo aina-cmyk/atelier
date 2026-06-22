@@ -14,6 +14,7 @@ interface ScheduledEmail {
   gmail_access_token: string
   gmail_refresh_token: string
   sent_by: string
+  dossier_json: string
 }
 
 // Verbose token refresh — logs every detail so we can diagnose 400s from Google
@@ -218,17 +219,32 @@ export async function GET(request: NextRequest) {
 
       if (email.brand_name) {
         const base = process.env.PRODUCTION_URL ?? 'http://localhost:3000'
+        let dossier: Record<string, unknown> = {}
+        try {
+          if (email.dossier_json) dossier = JSON.parse(email.dossier_json)
+        } catch {
+          console.warn(`[cron] Email ${email.id}: could not parse dossier_json`)
+        }
         try {
           await fetch(`${base}/api/save-to-sheets`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              brand_name: email.brand_name, contact_name: email.contact_name,
-              email_subject: email.subject, email_body: email.body,
-              status: 'Sent', lead_source: 'Scheduled',
-              website: '', revenue_estimate: '', retailers: [],
-              category: '', icp_score: 0, score_band: '', signals: [], target_role: '',
+              brand_name: email.brand_name,
+              contact_name: email.contact_name,
+              email_subject: email.subject,
+              email_body: email.body,
+              status: 'Sent',
+              lead_source: 'Scheduled',
               sent_by: email.sent_by ?? '',
+              website: dossier.website ?? '',
+              revenue_estimate: dossier.revenue_estimate ?? '',
+              retailers: dossier.retailers ?? [],
+              category: dossier.category ?? '',
+              icp_score: dossier.icp_score ?? 0,
+              score_band: dossier.score_band ?? '',
+              signals: dossier.signals ?? [],
+              target_role: dossier.target_role ?? '',
             }),
           })
           console.log(`[cron] Email ${email.id}: save-to-sheets done`)
