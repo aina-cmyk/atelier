@@ -20,7 +20,6 @@ export async function GET() {
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile'
     ],
-    prompt: 'consent'
   })
 
   return NextResponse.redirect(url)
