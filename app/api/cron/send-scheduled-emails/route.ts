@@ -17,10 +17,15 @@ interface ScheduledEmail {
 
 // Verbose token refresh — logs every detail so we can diagnose 400s from Google
 async function refreshTokenWithLogging(refreshToken: string, emailId: number): Promise<{ token: string | null; status: number; errorBody: unknown }> {
+  console.log('[cron] Token refresh attempt:', {
+    client_id_present: !!process.env.GMAIL_CLIENT_ID,
+    client_secret_present: !!process.env.GMAIL_CLIENT_SECRET,
+    client_id_length: process.env.GMAIL_CLIENT_ID?.length,
+    refresh_token_length: refreshToken?.length
+  })
+
   const clientId = process.env.GMAIL_CLIENT_ID ?? ''
   const clientSecret = process.env.GMAIL_CLIENT_SECRET ?? ''
-
-  console.log(`[cron] Email ${emailId}: token refresh — GMAIL_CLIENT_ID length=${clientId.length} GMAIL_CLIENT_SECRET present=${!!clientSecret} refresh_token length=${refreshToken.length}`)
 
   if (!clientId || !clientSecret) {
     console.error(`[cron] Email ${emailId}: GMAIL_CLIENT_ID or GMAIL_CLIENT_SECRET is missing from environment`)
@@ -46,14 +51,14 @@ async function refreshTokenWithLogging(refreshToken: string, emailId: number): P
     return { token: null, status: 0, errorBody: String(fetchErr) }
   }
 
+  if (!res.ok) {
+    const errorBody = await res.json()
+    console.log('[cron] Token refresh error response:', JSON.stringify(errorBody))
+    return { token: null, status: res.status, errorBody }
+  }
+
   const responseText = await res.text()
   console.log(`[cron] Email ${emailId}: Google token response status=${res.status} body=${responseText}`)
-
-  if (!res.ok) {
-    let parsedError: unknown = responseText
-    try { parsedError = JSON.parse(responseText) } catch {}
-    return { token: null, status: res.status, errorBody: parsedError }
-  }
 
   let data: Record<string, unknown>
   try {
