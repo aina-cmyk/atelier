@@ -54,7 +54,7 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
     .join('\n') ?? ''
 
   if (template) {
-    return 'You are personalising a saved email template for a specific brand and contact on behalf of Atelier, an ANZ contract manufacturer.\n\n' +
+    return 'You are personalising a saved email template for a specific brand and contact on behalf of Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins.\n\n' +
       'SAVED TEMPLATE TO USE AS STYLE GUIDE:\n' +
       'Subject: ' + template.subject + '\n' +
       'Body:\n' + template.body + '\n\n' +
@@ -74,7 +74,7 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
       '{ "subject": "string", "body": "string" }'
   }
 
-  return 'You are writing a cold outreach email on behalf of Atelier, an ANZ contract manufacturer serving prestige beauty, skincare, haircare, and wellness brands.\n\n' +
+  return 'You are writing a cold outreach email on behalf of Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins, powered by 8.5M+ supply chain permutations that match product specs with manufacturer capabilities globally.\n\n' +
     'RECIPIENT\n' +
     'Name: ' + contactName + '\n' +
     'Role: ' + role + '\n' +
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
           max_tokens: 200,
           messages: [{
             role: 'user',
-            content: `You are a B2B sales strategist for Atelier, an ANZ contract manufacturer for prestige beauty brands. Based on this brand research, write 2-3 sentences suggesting the best pitch angle for outreach. Be specific — reference actual signals, retailers, and growth indicators. Write in second person as if briefing a sales rep. Brand: ${dossier.brand_name}. ICP Score: ${dossier.icp_score} (${dossier.score_band}). Revenue: ${dossier.revenue_estimate ?? 'unknown'}. Retailers: ${(dossier.retailers ?? []).map((r: {name: string}) => r.name).join(', ')}. Key signals: ${signals}. Write only the pitch angle sentences. No preamble.`
+            content: `You are a B2B sales strategist for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins. Based on this brand research, write 2-3 sentences suggesting the best pitch angle for outreach. Be specific — reference actual signals, retailers, and growth indicators. Write in second person as if briefing a sales rep. Brand: ${dossier.brand_name}. ICP Score: ${dossier.icp_score} (${dossier.score_band}). Revenue: ${dossier.revenue_estimate ?? 'unknown'}. Retailers: ${(dossier.retailers ?? []).map((r: {name: string}) => r.name).join(', ')}. Key signals: ${signals}. Write only the pitch angle sentences. No preamble.`
           }]
         })
       })

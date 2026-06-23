@@ -23,22 +23,44 @@ export async function POST(request: NextRequest) {
   try {
     await initialiseDb()
     const body = await request.json()
-    const { name, role, subject, body: emailBody } = body
+    const { name, role, subject, body: emailBody, target_role = '' } = body
     if (!name || !role || !subject || !emailBody) {
       return NextResponse.json({ error: 'name, role, subject, and body are required' }, { status: 400 })
     }
     if (isVercel) {
       const { sql } = await import('@vercel/postgres')
-      const result = await sql`INSERT INTO templates (name, role, subject, body) VALUES (${name}, ${role}, ${subject}, ${emailBody}) RETURNING id`
+      const result = await sql`INSERT INTO templates (name, role, subject, body, target_role) VALUES (${name}, ${role}, ${subject}, ${emailBody}, ${target_role}) RETURNING id`
       return NextResponse.json({ success: true, id: result.rows[0].id })
     } else {
       const db = getLocalDb()
-      const result = db.prepare('INSERT INTO templates (name, role, subject, body) VALUES (?, ?, ?, ?)').run(name, role, subject, emailBody)
+      const result = db.prepare('INSERT INTO templates (name, role, subject, body, target_role) VALUES (?, ?, ?, ?, ?)').run(name, role, subject, emailBody, target_role)
       return NextResponse.json({ success: true, id: result.lastInsertRowid })
     }
   } catch (error) {
     console.error('Template save error:', error)
     return NextResponse.json({ error: 'Failed to save template' }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    await initialiseDb()
+    const body = await request.json()
+    const { id, name, role, subject, body: emailBody, target_role = '' } = body
+    if (!id || !name || !role || !subject || !emailBody) {
+      return NextResponse.json({ error: 'id, name, role, subject, and body are required' }, { status: 400 })
+    }
+    if (isVercel) {
+      const { sql } = await import('@vercel/postgres')
+      await sql`UPDATE templates SET name = ${name}, role = ${role}, subject = ${subject}, body = ${emailBody}, target_role = ${target_role}, updated_at = NOW() WHERE id = ${id}`
+    } else {
+      const db = getLocalDb()
+      db.prepare('UPDATE templates SET name = ?, role = ?, subject = ?, body = ?, target_role = ?, updated_at = datetime(\'now\') WHERE id = ?').run(name, role, subject, emailBody, target_role, id)
+    }
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Template update error:', error)
+    return NextResponse.json({ error: 'Failed to update template' }, { status: 500 })
   }
 }
 

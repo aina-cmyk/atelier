@@ -8,6 +8,7 @@ interface Template {
   role: string
   subject: string
   body: string
+  target_role: string
   created_at: string
 }
 
@@ -20,17 +21,31 @@ const TEMPLATE_TYPES = [
   'Partnership Proposal'
 ]
 
+const STAKEHOLDER_ROLES = [
+  'General',
+  'CEO',
+  'CFO',
+  'COO',
+  'CMO',
+  'VP Product',
+  'VP Operations',
+  'Head of NPD',
+  'Head of Marketing'
+]
+
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [filterType, setFilterType] = useState<string>('All')
-  const [newName, setNewName] = useState('')
-  const [newType, setNewType] = useState('Cold Outreach')
-  const [newSubject, setNewSubject] = useState('')
-  const [newBody, setNewBody] = useState('')
+  const [formName, setFormName] = useState('')
+  const [formType, setFormType] = useState('Cold Outreach')
+  const [formTargetRole, setFormTargetRole] = useState('General')
+  const [formSubject, setFormSubject] = useState('')
+  const [formBody, setFormBody] = useState('')
 
   useEffect(() => {
     document.title = 'Templates — Atelier'
@@ -49,21 +64,52 @@ export default function TemplatesPage() {
     }
   }
 
+  function openCreate() {
+    setEditingId(null)
+    setFormName('')
+    setFormType('Cold Outreach')
+    setFormTargetRole('General')
+    setFormSubject('')
+    setFormBody('')
+    setShowForm(true)
+  }
+
+  function openEdit(t: Template) {
+    setEditingId(t.id)
+    setFormName(t.name)
+    setFormType(t.role)
+    setFormTargetRole(t.target_role || 'General')
+    setFormSubject(t.subject)
+    setFormBody(t.body)
+    setShowForm(true)
+    setSelectedTemplate(null)
+  }
+
+  function cancelForm() {
+    setShowForm(false)
+    setEditingId(null)
+  }
+
   async function handleSave() {
-    if (!newName || !newSubject || !newBody) return
+    if (!formName || !formSubject || !formBody) return
     setSaving(true)
     try {
+      const payload = {
+        name: formName,
+        role: formType,
+        subject: formSubject,
+        body: formBody,
+        target_role: formTargetRole === 'General' ? '' : formTargetRole
+      }
       const res = await fetch('/api/templates', {
-        method: 'POST',
+        method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName, role: newType, subject: newSubject, body: newBody })
+        body: JSON.stringify(editingId ? { id: editingId, ...payload } : payload)
       })
       const data = await res.json()
       if (data.success) {
-        setNewName('')
-        setNewSubject('')
-        setNewBody('')
-        setShowCreate(false)
+        setShowForm(false)
+        setEditingId(null)
         fetchTemplates()
       }
     } catch {
@@ -73,7 +119,8 @@ export default function TemplatesPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: number, name: string) {
+    if (!window.confirm(`Delete template "${name}"? This cannot be undone.`)) return
     try {
       await fetch(`/api/templates?id=${id}`, { method: 'DELETE' })
       setTemplates(templates.filter(t => t.id !== id))
@@ -92,23 +139,23 @@ export default function TemplatesPage() {
       <div className="page-eyebrow">Templates</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h1 className="page-title">Email Templates</h1>
-        <button onClick={() => setShowCreate(!showCreate)} className="btn btn-primary">
-          {showCreate ? 'Cancel' : '+ New template'}
+        <button onClick={openCreate} className="btn btn-primary">
+          + New template
         </button>
       </div>
       <p className="page-sub" style={{ marginBottom: 32 }}>Save and reuse outreach emails. One template can be used across any stakeholder role.</p>
 
-      {showCreate && (
+      {showForm && (
         <div className="card" style={{ marginBottom: 24 }}>
-          <div className="section-label" style={{ marginBottom: 16 }}>Create new template</div>
+          <div className="section-label" style={{ marginBottom: 16 }}>{editingId ? 'Edit template' : 'Create new template'}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <label className="field-label">Template name</label>
                 <input
                   type="text"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
                   placeholder="e.g. Prestige skincare cold outreach"
                   className="input"
                 />
@@ -119,8 +166,8 @@ export default function TemplatesPage() {
                   {TEMPLATE_TYPES.map(type => (
                     <button
                       key={type}
-                      onClick={() => setNewType(type)}
-                      className={`role-btn ${newType === type ? 'active' : ''}`}
+                      onClick={() => setFormType(type)}
+                      className={`role-btn ${formType === type ? 'active' : ''}`}
                     >
                       {type}
                     </button>
@@ -129,11 +176,25 @@ export default function TemplatesPage() {
               </div>
             </div>
             <div>
+              <label className="field-label">Stakeholder role <span style={{ fontWeight: 400, color: 'var(--slate-400)' }}>(optional — auto-switches role in email generator)</span></label>
+              <div className="role-row" style={{ marginTop: 4, flexWrap: 'wrap' }}>
+                {STAKEHOLDER_ROLES.map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setFormTargetRole(r)}
+                    className={`role-btn ${formTargetRole === r ? 'active' : ''}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
               <label className="field-label">Subject line</label>
               <input
                 type="text"
-                value={newSubject}
-                onChange={e => setNewSubject(e.target.value)}
+                value={formSubject}
+                onChange={e => setFormSubject(e.target.value)}
                 placeholder="e.g. Manufacturing partnership — [Brand name]"
                 className="input"
               />
@@ -141,8 +202,8 @@ export default function TemplatesPage() {
             <div>
               <label className="field-label">Email body</label>
               <textarea
-                value={newBody}
-                onChange={e => setNewBody(e.target.value)}
+                value={formBody}
+                onChange={e => setFormBody(e.target.value)}
                 placeholder="Paste your existing email here or write a new one. Use [Brand name], [Contact name], [Retailer] as placeholders."
                 rows={12}
                 className="textarea"
@@ -151,12 +212,12 @@ export default function TemplatesPage() {
             <div style={{ display: 'flex', gap: 12 }}>
               <button
                 onClick={handleSave}
-                disabled={saving || !newName || !newSubject || !newBody}
+                disabled={saving || !formName || !formSubject || !formBody}
                 className="btn btn-primary"
               >
-                {saving ? 'Saving...' : 'Save template'}
+                {saving ? 'Saving...' : editingId ? 'Update template' : 'Save template'}
               </button>
-              <button onClick={() => setShowCreate(false)} className="btn btn-secondary">
+              <button onClick={cancelForm} className="btn btn-secondary">
                 Cancel
               </button>
             </div>
@@ -209,18 +270,31 @@ export default function TemplatesPage() {
                 onClick={() => setSelectedTemplate(template)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'var(--brand-100)', color: 'var(--brand-400)', padding: '2px 8px', borderRadius: 4 }}>
                       {template.role}
                     </span>
+                    {template.target_role && (
+                      <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'var(--slate-100)', color: 'var(--slate-500)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--black-100)' }}>
+                        {template.target_role}
+                      </span>
+                    )}
                     <span style={{ fontSize: 14, fontWeight: 500 }}>{template.name}</span>
                   </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDelete(template.id) }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate-400)', fontSize: 18, padding: '2px 6px' }}
-                  >
-                    ×
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); openEdit(template) }}
+                      style={{ background: 'none', border: '1px solid var(--black-100)', cursor: 'pointer', color: 'var(--slate-500)', fontSize: 12, padding: '3px 10px', borderRadius: 4 }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDelete(template.id, template.name) }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate-400)', fontSize: 18, padding: '2px 6px' }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 4 }}>{template.subject}</div>
                 <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>
@@ -234,7 +308,14 @@ export default function TemplatesPage() {
             <div className="card" style={{ alignSelf: 'start' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-400)', marginBottom: 4 }}>{selectedTemplate.role}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-400)' }}>{selectedTemplate.role}</span>
+                    {selectedTemplate.target_role && (
+                      <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'var(--slate-100)', color: 'var(--slate-500)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--black-100)' }}>
+                        {selectedTemplate.target_role}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 18, fontWeight: 500 }}>{selectedTemplate.name}</div>
                 </div>
                 <button

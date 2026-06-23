@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           max_tokens: 300,
           messages: [{
             role: 'user',
-            content: `You are a B2B sales strategist for Atelier, an ANZ contract manufacturer for prestige beauty brands.
+            content: `You are a B2B sales strategist for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins, powered by 8.5M+ supply chain permutations.
 
 Write a pitch angle for reaching out to the ${role} of ${dossier.brand_name}. Their primary concern is ${ALL_ROLES[role]}.
 

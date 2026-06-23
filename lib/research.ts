@@ -96,7 +96,7 @@ export async function researchBrand(brandName: string) {
 }
 
 function buildResearchPrompt(brandName: string): string {
-  return 'You are a sales intelligence analyst for Atelier, an ANZ contract manufacturer for prestige beauty, skincare, haircare and wellness brands.\n\n' +
+  return 'You are a sales intelligence analyst for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty, skincare, haircare and wellness brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins.\n\n' +
     'Research this brand and return a qualification dossier. Use web search to find current data.\n\n' +
     'Brand: ' + brandName + '\n\n' +
     'Search for: revenue, prestige retailers (Mecca, Sephora, David Jones, Net-a-Porter), funding, NPD hiring, recent launches, ANZ market presence, 2-3 direct competitor brands, and any celebrity/influencer/model founders or backers.\n\n' +

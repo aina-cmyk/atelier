@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     "brand": "brand name",
     "signal_type": "launch | funding | retail | expansion | celebrity | leadership | trend",
     "headline": "one sentence summary",
-    "why_it_matters": "why this matters for a beauty contract manufacturer",
+    "why_it_matters": "why this matters for a GenAI-powered NPD and manufacturing platform serving prestige beauty brands",
     "date": "Month Year"
   }
 ]`

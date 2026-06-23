@@ -19,7 +19,7 @@ export async function GET() {
         }],
         messages: [{
           role: 'user',
-          content: `You are a supply chain and trade analyst for Atelier, an ANZ contract manufacturer for prestige beauty brands.
+          content: `You are a supply chain and trade analyst for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — with 8.5M+ supply chain permutations matching product specs to manufacturer capabilities globally.
 
 Search for the latest global signals from the last 30 days that are relevant to beauty manufacturing and supply chains.
 
@@ -31,7 +31,7 @@ Look for:
 - Currency fluctuations affecting import/export costs for AU brands
 - Any major supply chain disruptions affecting global beauty brands
 
-For each signal explain why it creates an outreach opportunity for Atelier as a local ANZ manufacturer.
+For each signal explain why it creates an outreach opportunity for Atelier — specifically how Atelier's platform can help brands launch faster, reduce innovation costs, or scale SKU capacity in response to the disruption.
 
 Return 4 signals as valid JSON only. No preamble, no markdown fences. Begin with [ and end with ].
 [

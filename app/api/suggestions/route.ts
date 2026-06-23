@@ -50,13 +50,13 @@ export async function POST(request: Request) {
       messages: [
         {
           role: 'user',
-          content: 'You are a sales intelligence analyst for Atelier, an ANZ contract manufacturer specialising in prestige beauty, skincare, haircare, and wellness products.\n\n' +
-            'Suggest 8 ANZ and global beauty/wellness brands that would be strong prospects for Atelier. Focus on:\n' +
+          content: 'You are a sales intelligence analyst for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins.\n\n' +
+            'Suggest 8 global prestige beauty/wellness brands that would be strong prospects for Atelier. Focus on brands that would benefit from faster NPD cycles, greater SKU capacity, or lower cost of innovation:\n' +
             '- Prestige beauty, skincare, haircare, or wellness brands\n' +
             '- Revenue of AUD $50M+ or showing strong growth signals\n' +
             '- Sold through Sephora, Mecca, David Jones, or equivalent prestige retailers\n' +
             '- Active product development (recent launches, NPD hiring, funding)\n' +
-            '- Available in ANZ markets or expanding into ANZ\n\n' +
+            '- Scaling their product range or entering new categories\n\n' +
             excludeList + '\n\n' +
             'Return exactly 8 brand suggestions.\n\n' +
             'Return valid JSON only. No preamble, no markdown fences. Begin with [ and end with ].\n' +
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
             '  {\n' +
             '    "brand_name": "string",\n' +
             '    "category": "string",\n' +
-            '    "reason": "string (one sentence why this brand is a good Atelier prospect)",\n' +
+            '    "reason": "string (one sentence why this brand would benefit from Atelier\'s NPD and manufacturing platform)",\n' +
             '    "signal": "string (one key signal e.g. Recently launched at Mecca AU)"\n' +
             '  }\n' +
             ']'

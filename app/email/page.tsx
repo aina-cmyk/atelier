@@ -30,6 +30,7 @@ interface Template {
   role: string
   subject: string
   body: string
+  target_role?: string
 }
 
 interface TabSnapshot {
@@ -1113,7 +1114,9 @@ export default function EmailPage() {
                     const tmpl = { subject: t.subject, body: t.body }
                     setActiveTemplate(tmpl)
                     setShowTemplates(false)
-                    generateEmail(selectedRole, tmpl)
+                    const roleToUse = t.target_role && t.target_role !== '' ? t.target_role : selectedRole
+                    if (t.target_role && t.target_role !== '') setSelectedRole(t.target_role)
+                    generateEmail(roleToUse, tmpl)
                   }}
                   className="btn btn-primary btn-sm"
                 >

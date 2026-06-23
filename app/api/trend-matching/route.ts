@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         }],
         messages: [{
           role: 'user',
-          content: `You are a beauty industry trend analyst for Atelier, an ANZ contract manufacturer for prestige beauty brands.
+          content: `You are a beauty industry trend analyst for Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster and increase R&D SKU capacity by 10x, powered by 8.5M+ supply chain permutations.
 
 Search for the top trending beauty and wellness categories right now in 2026 — ingredients, formulation trends, product formats, or emerging categories gaining momentum in prestige retail.
 
