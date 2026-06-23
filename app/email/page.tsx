@@ -77,6 +77,7 @@ export default function EmailPage() {
   const [showTemplates, setShowTemplates] = useState(false)
   const [savedTemplates, setSavedTemplates] = useState<Template[]>([])
   const [activeTemplate, setActiveTemplate] = useState<{ subject: string; body: string } | null>(null)
+  const [roleSwitchedTo, setRoleSwitchedTo] = useState<string | null>(null)
   const [showContactDropdown, setShowContactDropdown] = useState(false)
   const [loadingContacts, setLoadingContacts] = useState(false)
   const [contactHistory, setContactHistory] = useState<{contact_role: string; sent_at: string}[]>([])
@@ -997,7 +998,14 @@ export default function EmailPage() {
 
       {activeTemplate && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--brand-100)', border: '1px solid var(--brand-200)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 12 }}>
-          <div style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 500 }}>Using saved template as style guide</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 500 }}>Using saved template as style guide</span>
+            {roleSwitchedTo && (
+              <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', background: '#050849', color: '#fff', padding: '2px 8px', borderRadius: 4 }}>
+                → Role switched to {roleSwitchedTo}
+              </span>
+            )}
+          </div>
           <button onClick={() => { setActiveTemplate(null); generateEmail(selectedRole) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontSize: 12 }}>Remove ×</button>
         </div>
       )}
@@ -1105,9 +1113,14 @@ export default function EmailPage() {
             {savedTemplates.map(t => (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#fff', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)' }}>
                 <div>
-                  <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'var(--brand-100)', color: 'var(--brand-400)', padding: '2px 8px', borderRadius: 4, marginRight: 8 }}>{t.role}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</span>
-                  <div style={{ fontSize: 12, color: 'var(--slate-400)', marginTop: 2 }}>{t.subject}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', background: 'var(--brand-100)', color: 'var(--brand-400)', padding: '2px 8px', borderRadius: 4 }}>{t.role}</span>
+                    {t.target_role && (
+                      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', background: '#050849', color: '#fff', padding: '2px 8px', borderRadius: 4 }}>{t.target_role}</span>
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>{t.subject}</div>
                 </div>
                 <button
                   onClick={() => {
@@ -1115,7 +1128,11 @@ export default function EmailPage() {
                     setActiveTemplate(tmpl)
                     setShowTemplates(false)
                     const roleToUse = t.target_role && t.target_role !== '' ? t.target_role : selectedRole
-                    if (t.target_role && t.target_role !== '') setSelectedRole(t.target_role)
+                    if (t.target_role && t.target_role !== '') {
+                      setSelectedRole(t.target_role)
+                      setRoleSwitchedTo(t.target_role)
+                      setTimeout(() => setRoleSwitchedTo(null), 3000)
+                    }
                     generateEmail(roleToUse, tmpl)
                   }}
                   className="btn btn-primary btn-sm"
