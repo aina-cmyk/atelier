@@ -8,40 +8,40 @@ const RATE_PER_MILLION_OUTPUT = 15.00
 
 const MESSAGE_MATRIX: Record<string, { focus: string; proofPoints: string }> = {
   CFO: {
-    focus: 'Operating margin uplift and cost efficiency of outsourced manufacturing',
-    proofPoints: 'Revenue scale, capital deployed in product development'
+    focus: 'Cost reduction, margin improvement, and unit economics',
+    proofPoints: '2x operating profit margins, reduce the cost of innovation to near $0'
   },
   COO: {
-    focus: 'Capacity without headcount and operational scale',
-    proofPoints: 'SKU complexity, portfolio breadth, growth trajectory'
+    focus: 'Operational efficiency, supply chain reliability, and scaling without headcount',
+    proofPoints: 'Launch products 6x faster with no incremental headcount, bring unlimited products to market with no internal resource drain'
   },
   CMO: {
-    focus: 'Speed to market — moving at the speed of culture',
-    proofPoints: 'Launch cadence, category trends, competitive context'
+    focus: 'Speed to market, launch cadence, and trend responsiveness',
+    proofPoints: 'Launch products 6x faster, increase product output by 10x'
   },
   CEO: {
-    focus: 'More products to market faster and topline revenue growth',
-    proofPoints: 'Funding, retail expansion, acquisition activity'
+    focus: 'Topline growth, competitive advantage, and speed and scale',
+    proofPoints: 'Launch products 6x faster, increase product output by 10x, 2x operating profit margins'
   },
   'VP Product': {
-    focus: 'Scaling product development capacity without building in-house manufacturing',
-    proofPoints: 'SKU complexity, NPD pipeline, new category expansion'
+    focus: 'Scaling product output without building internal manufacturing capacity',
+    proofPoints: 'Increase product output by 10x, bring unlimited products to market with no internal resource drain'
   },
   'VP Marketing': {
     focus: 'Speed to market and launch cadence to stay ahead of trends',
-    proofPoints: 'Launch cadence, category trends, retail expansion'
+    proofPoints: 'Launch products 6x faster, increase product output by 10x'
   },
   'VP Operations': {
-    focus: 'Operational efficiency and supply chain reliability',
-    proofPoints: 'Manufacturing capacity, lead times, quality consistency'
+    focus: 'Operational efficiency, supply chain reliability, and no headcount increase',
+    proofPoints: 'Launch products 6x faster with no incremental headcount, bring unlimited products to market with no internal resource drain'
   },
   'Head of NPD': {
-    focus: 'Bringing new formulations to market faster with expert manufacturing partners',
-    proofPoints: 'Formulation capabilities, SKU complexity, NPD support'
+    focus: 'Formulation speed, SKU complexity, and manufacturing capabilities',
+    proofPoints: 'Increase product output by 10x, launch products 6x faster, reduce the cost of innovation to near $0'
   },
   'Head of Marketing': {
     focus: 'Campaign-led product launches and speed to market',
-    proofPoints: 'Launch cadence, retail expansion, brand building'
+    proofPoints: 'Launch products 6x faster, increase product output by 10x'
   }
 }
 
@@ -53,8 +53,12 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
     .map(s => s.type + ': ' + s.description.replace(/\*\*/g, ''))
     .join('\n') ?? ''
 
+  const atelierDesc = "Atelier's GenAI platform streamlines the end-to-end NPD and manufacturing process, leveraging 8.5M+ supply chain permutations to match product specs with perfectly aligned manufacturer capabilities. For a single unit cost, brands receive finished product delivered directly into their DC, ready to sell."
+
   if (template) {
-    return 'You are personalising a saved email template for a specific brand and contact on behalf of Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins.\n\n' +
+    return 'You are personalising a saved email template for a specific brand and contact on behalf of Atelier.\n\n' +
+      'ABOUT ATELIER\n' +
+      atelierDesc + '\n\n' +
       'SAVED TEMPLATE TO USE AS STYLE GUIDE:\n' +
       'Subject: ' + template.subject + '\n' +
       'Body:\n' + template.body + '\n\n' +
@@ -66,33 +70,38 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
       'Retail presence: ' + retailers + '\n\n' +
       'BRAND SIGNALS (weave at least two into the email)\n' +
       signals + '\n\n' +
-      (pitchBullet ? `PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"${pitchBullet}"\n\n` : '') +
+      (pitchBullet ? 'PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"' + pitchBullet + '"\n\n' : '') +
       'INSTRUCTIONS\n' +
-      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient by first name. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
+      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient by first name. Maximum 100 words for the email body. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
       'OUTPUT FORMAT\n' +
       'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
       '{ "subject": "string", "body": "string" }'
   }
 
-  return 'You are writing a cold outreach email on behalf of Atelier, a GenAI platform that streamlines end-to-end NPD and manufacturing for prestige beauty brands — enabling brands to launch products 6x faster, increase R&D SKU capacity by 10x, reduce the cost of innovation to near $0, and 2x operating profit margins, powered by 8.5M+ supply chain permutations that match product specs with manufacturer capabilities globally.\n\n' +
+  return 'You are writing a cold outreach email on behalf of Atelier.\n\n' +
+    'ABOUT ATELIER\n' +
+    atelierDesc + '\n\n' +
     'RECIPIENT\n' +
     'Name: ' + contactName + '\n' +
     'Role: ' + role + '\n' +
     'Brand: ' + dossier.brand_name + '\n' +
     'Revenue (estimated): ' + (dossier.revenue_estimate ?? 'Unknown') + '\n' +
     'Retail presence: ' + retailers + '\n\n' +
-    'BRAND SIGNALS (open with the strongest one)\n' +
+    'BRAND SIGNALS (open with the strongest one as the reason for reaching out)\n' +
     signals + '\n\n' +
-    'ROLE-SPECIFIC MESSAGE FOCUS\n' +
-    'This executives primary concern is: ' + matrix.focus + '\n' +
-    'Key proof points: ' + matrix.proofPoints + '\n\n' +
-    (pitchBullet ? `PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"${pitchBullet}"\n\n` : '') +
-    (followUp ? `FOLLOW-UP CONTEXT — this is a follow-up email. The original email was sent on ${followUp.date_sent ?? 'a few days ago'} with subject "${followUp.original_subject ?? 'our previous email'}". Do NOT repeat the same pitch. Instead reference the previous outreach briefly and offer a new angle or insight.\n\n` : '') +
-    'EMAIL STRUCTURE — follow this exactly, 3 paragraphs, 100 words maximum:\n' +
-    'Paragraph 1 (1-2 sentences): Open with a specific buying signal — a recent launch, retail expansion, funding round, or growth indicator. Do NOT open with company stats or "I noticed...". Make it feel like you\'ve done your homework.\n' +
-    'Paragraph 2 (2-3 sentences): Connect that signal to why Atelier is relevant. Reference the executives specific responsibility. Introduce Atelier naturally — one prestige credential only.\n' +
-    'Paragraph 3 (1 sentence): Soft CTA — offer a brief call, no pressure.\n\n' +
-    'TONE: Conversational but professional. Write like a human, not a press release. No bullet points. No jargon. Address recipient by first name.\n' +
+    'ROLE-SPECIFIC FOCUS\n' +
+    'This executive\'s primary concern is: ' + matrix.focus + '\n' +
+    'Use the most relevant 1-2 proof points from: ' + matrix.proofPoints + '\n\n' +
+    (pitchBullet ? 'PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"' + pitchBullet + '"\n\n' : '') +
+    (followUp ? 'FOLLOW-UP CONTEXT — this is a follow-up email. The original email was sent on ' + (followUp.date_sent ?? 'a few days ago') + ' with subject "' + (followUp.original_subject ?? 'our previous email') + '". Do NOT repeat the same pitch. Reference the previous outreach briefly and offer a new angle or insight.\n\n' : '') +
+    'EMAIL WRITING RULES — follow exactly:\n' +
+    '1. Always open with a specific buying signal — a recent launch, acquisition, campaign, retail expansion, or role change. This is the reason for reaching out. Make it feel like you\'ve done your homework.\n' +
+    '2. Tailor to the recipient\'s role — speak to what they care about: ' + matrix.focus + '\n' +
+    '3. Keep it concise — grab attention, highlight 1-2 key benefits, end with a soft ask for a call. Maximum 100 words.\n' +
+    '4. Never oversell — one credential, one proof point, one CTA.\n' +
+    '5. Address recipient by first name.\n' +
+    '6. End with asking for a quick call next week.\n\n' +
+    'TONE: Conversational but professional. Write like a human, not a press release. No bullet points. No jargon.\n' +
     'SUBJECT LINE: Specific and curiosity-driven. Reference the brand or a signal. Under 8 words.\n' +
     'REQUIREMENT: You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
     'OUTPUT FORMAT\n' +
