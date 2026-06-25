@@ -56,7 +56,7 @@ const STEPS = [
   'Locating decision-maker contacts',
 ]
 
-const TIME_FILTERS = ['This Week', 'This Month', 'This Year', 'All Time'] as const
+const TIME_FILTERS = ['Today', 'Yesterday', 'This Week', 'This Month', 'This Year', 'All Time'] as const
 type TimeFilter = typeof TIME_FILTERS[number]
 
 const SENT_STATUSES = new Set(['Sent', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Closed'])
@@ -268,7 +268,14 @@ export default function Dashboard() {
         const date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
         if (!isNaN(date.getTime())) {
           const now = new Date()
-          if (timeFilter === 'This Week') {
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+          if (timeFilter === 'Today') {
+            if (dateDay.getTime() !== today.getTime()) return false
+          } else if (timeFilter === 'Yesterday') {
+            const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+            if (dateDay.getTime() !== yesterday.getTime()) return false
+          } else if (timeFilter === 'This Week') {
             const cutoff = new Date(now); cutoff.setDate(now.getDate() - 7)
             if (date < cutoff) return false
           } else if (timeFilter === 'This Month') {

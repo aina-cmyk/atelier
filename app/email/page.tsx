@@ -948,7 +948,7 @@ export default function EmailPage() {
             Sent to {contact?.name ? `${contact.name}${contact.role ? ` · ${contact.role}` : ''} · ${toEmail || contact.email}` : toEmail || contact?.email}
           </div>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <button onClick={() => router.push('/')} className="btn btn-primary btn-sm">Research another brand</button>
+            <button onClick={() => router.push('/portfolio')} className="btn btn-primary btn-sm">Research another brand</button>
             <button onClick={() => router.push('/pipeline')} className="btn btn-secondary btn-sm">View pipeline</button>
           </div>
         </div>
