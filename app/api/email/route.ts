@@ -72,7 +72,7 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
       signals + '\n\n' +
       (pitchBullet ? 'PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"' + pitchBullet + '"\n\n' : '') +
       'INSTRUCTIONS\n' +
-      'Rewrite the template above, keeping the same tone, structure, and length. Replace any generic placeholders with real brand-specific facts from the signals above. Keep the subject line style but make it specific to this brand. Address the recipient by first name. Maximum 100 words for the email body. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
+      'Rewrite the template above for this specific brand and contact. Keep the same tone, structure, and length as the template — do not add or remove paragraphs, do not change the style. Replace any generic placeholders with real brand-specific facts from the signals above. Open with a specific buying signal from the brand. Address the recipient by first name. End with a soft CTA asking for a call. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
       'OUTPUT FORMAT\n' +
       'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
       '{ "subject": "string", "body": "string" }'
@@ -94,13 +94,12 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
     'Use the most relevant 1-2 proof points from: ' + matrix.proofPoints + '\n\n' +
     (pitchBullet ? 'PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"' + pitchBullet + '"\n\n' : '') +
     (followUp ? 'FOLLOW-UP CONTEXT — this is a follow-up email. The original email was sent on ' + (followUp.date_sent ?? 'a few days ago') + ' with subject "' + (followUp.original_subject ?? 'our previous email') + '". Do NOT repeat the same pitch. Reference the previous outreach briefly and offer a new angle or insight.\n\n' : '') +
-    'EMAIL WRITING RULES — follow exactly:\n' +
-    '1. Always open with a specific buying signal — a recent launch, acquisition, campaign, retail expansion, or role change. This is the reason for reaching out. Make it feel like you\'ve done your homework.\n' +
-    '2. Tailor to the recipient\'s role — speak to what they care about: ' + matrix.focus + '\n' +
-    '3. Keep it concise — grab attention, highlight 1-2 key benefits, end with a soft ask for a call. Maximum 100 words.\n' +
-    '4. Never oversell — one credential, one proof point, one CTA.\n' +
-    '5. Address recipient by first name.\n' +
-    '6. End with asking for a quick call next week.\n\n' +
+    'EMAIL WRITING RULES:\n' +
+    '1. Open with a specific buying signal — a recent launch, acquisition, campaign, retail expansion, or role change. Make it feel like you\'ve done your homework.\n' +
+    '2. Tailor the message to the recipient\'s role — speak to what they care about: ' + matrix.focus + '\n' +
+    '3. Weave in 1-2 relevant proof points naturally.\n' +
+    '4. Address recipient by first name.\n' +
+    '5. End with a soft CTA asking for a call.\n\n' +
     'TONE: Conversational but professional. Write like a human, not a press release. No bullet points. No jargon.\n' +
     'SUBJECT LINE: Specific and curiosity-driven. Reference the brand or a signal. Under 8 words.\n' +
     'REQUIREMENT: You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
