@@ -513,7 +513,8 @@ export default function EmailPage() {
           contact_name: contactName,
           template: template ?? activeTemplate ?? undefined,
           pitch_bullet: bullet ?? selectedBullet ?? undefined,
-          follow_up: followUpContext ?? undefined
+          follow_up: followUpContext ?? undefined,
+          sender_name: localStorage.getItem('atelier_user_name') ?? ''
         })
       })
 

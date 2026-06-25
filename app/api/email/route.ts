@@ -45,7 +45,7 @@ const MESSAGE_MATRIX: Record<string, { focus: string; proofPoints: string }> = {
   }
 }
 
-function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contactName: string, template?: { subject: string; body: string }, pitchBullet?: string, followUp?: { original_subject?: string; contact_name?: string; date_sent?: string }): string {
+function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contactName: string, template?: { subject: string; body: string }, pitchBullet?: string, followUp?: { original_subject?: string; contact_name?: string; date_sent?: string }, senderName?: string): string {
   const matrix = MESSAGE_MATRIX[role] ?? MESSAGE_MATRIX['CEO']
   const retailers = (dossier.retailers as { name: string }[])?.map(r => r.name).join(', ') ?? 'Unknown'
   const signals = (dossier.signals as { type: string; description: string }[])
@@ -72,7 +72,8 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
       signals + '\n\n' +
       (pitchBullet ? 'PRIORITY TALKING POINT — weave this specific point naturally into the email:\n"' + pitchBullet + '"\n\n' : '') +
       'INSTRUCTIONS\n' +
-      'Rewrite the template above for this specific brand and contact. Keep the same tone, structure, and length as the template — do not add or remove paragraphs, do not change the style. Replace any generic placeholders with real brand-specific facts from the signals above. Open with a specific buying signal from the brand. Address the recipient by first name. End with a soft CTA asking for a call. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
+      'Rewrite the template above for this specific brand and contact. Keep the same tone, structure, and length as the template — do not add or remove paragraphs, do not change the style. Replace any generic placeholders with real brand-specific facts from the signals above. Open with a specific buying signal from the brand. Address the recipient by first name. End with a soft CTA asking for a call. You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n' +
+      (senderName ? 'Sign off with "Thanks," or "Best," followed by the sender\'s name: ' + senderName + '. Do not include a position or title.' : 'Sign off with just "Thanks," with no name.') + '\n\n' +
       'OUTPUT FORMAT\n' +
       'Return valid JSON only. No preamble, no markdown fences. Begin with { and end with }.\n' +
       '{ "subject": "string", "body": "string" }'
@@ -99,7 +100,8 @@ function buildEmailPrompt(dossier: Record<string, unknown>, role: string, contac
     '2. Tailor the message to the recipient\'s role — speak to what they care about: ' + matrix.focus + '\n' +
     '3. Weave in 1-2 relevant proof points naturally.\n' +
     '4. Address recipient by first name.\n' +
-    '5. End with a soft CTA asking for a call.\n\n' +
+    '5. End with a soft CTA asking for a call.\n' +
+    (senderName ? '6. Sign off with "Thanks," or "Best," followed by the sender\'s name: ' + senderName + '. Do not include a position or title.\n' : '6. Sign off with just "Thanks," with no name.\n') + '\n' +
     'TONE: Conversational but professional. Write like a human, not a press release. No bullet points. No jargon.\n' +
     'SUBJECT LINE: Specific and curiosity-driven. Reference the brand or a signal. Under 8 words.\n' +
     'REQUIREMENT: You MUST mention the brand name ' + dossier.brand_name + ' at least once in the email body.\n\n' +
@@ -189,7 +191,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, pitch_angle: pitch })
     }
 
-    const { dossier, role, contact_name, template, pitch_bullet, follow_up } = body
+    const { dossier, role, contact_name, template, pitch_bullet, follow_up, sender_name } = body
 
     if (!dossier || !role || !contact_name) {
       return NextResponse.json(
@@ -198,7 +200,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const prompt = buildEmailPrompt(dossier, role, contact_name, template, pitch_bullet, follow_up)
+    const prompt = buildEmailPrompt(dossier, role, contact_name, template, pitch_bullet, follow_up, sender_name || undefined)
 
     let result = await generateOnce(prompt, dossier)
     let totalCost = result.cost
