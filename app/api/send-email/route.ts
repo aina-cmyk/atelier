@@ -23,10 +23,46 @@ function toBase64Url(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+function markdownToHtml(text: string): string {
+  const lines = text.split('\n')
+  const processed: string[] = []
+  let inList = false
+
+  for (const line of lines) {
+    const bulletMatch = line.match(/^\s*- (.+)/)
+    if (bulletMatch) {
+      if (!inList) { processed.push('<ul style="margin:8px 0;padding-left:20px;">'); inList = true }
+      processed.push('<li>' + bulletMatch[1] + '</li>')
+    } else {
+      if (inList) { processed.push('</ul>'); inList = false }
+      processed.push(line)
+    }
+  }
+  if (inList) processed.push('</ul>')
+
+  let html = processed.join('\n')
+
+  // Bold before italic to avoid partial matches
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+
+  // Markdown links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#050849;">$1</a>')
+
+  // Newlines → <br>, but don't add <br> adjacent to block elements
+  html = html.replace(/\n/g, '<br>')
+  html = html.replace(/<br>(<\/?ul>|<li>)/g, '$1')
+  html = html.replace(/(<\/ul>|<\/li>)<br>/g, '$1')
+
+  return `<html><body style="font-family:sans-serif;font-size:14px;line-height:1.6;">${html}</body></html>`
+}
+
 function makeEmailBody(to: string, subject: string, body: string, attachments?: Attachment[], cc?: string, bcc?: string): string {
   const ccAddresses = cc ? cc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
   const bccAddresses = bcc ? bcc.split(',').map(e => e.trim()).filter(Boolean).join(', ') : ''
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`
+
+  const htmlBody = markdownToHtml(body)
 
   if (!attachments || attachments.length === 0) {
     const lines = [
@@ -34,10 +70,11 @@ function makeEmailBody(to: string, subject: string, body: string, attachments?: 
       ...(ccAddresses ? [`Cc: ${ccAddresses}`] : []),
       ...(bccAddresses ? [`Bcc: ${bccAddresses}`] : []),
       `Subject: ${encodedSubject}`,
-      'Content-Type: text/plain; charset=utf-8',
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
       'Content-Transfer-Encoding: quoted-printable',
       '',
-      body,
+      htmlBody,
     ]
     return toBase64Url(Buffer.from(lines.join('\r\n')))
   }
@@ -52,10 +89,10 @@ function makeEmailBody(to: string, subject: string, body: string, attachments?: 
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
-    'Content-Type: text/plain; charset=utf-8',
+    'Content-Type: text/html; charset=utf-8',
     'Content-Transfer-Encoding: quoted-printable',
     '',
-    body,
+    htmlBody,
   ]
 
   for (const att of attachments) {
