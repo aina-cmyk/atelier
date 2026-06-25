@@ -63,6 +63,7 @@ function makeEmailBody(to: string, subject: string, body: string, attachments?: 
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, 'utf-8').toString('base64')}?=`
 
   const htmlBody = markdownToHtml(body)
+  const htmlBodyB64 = Buffer.from(htmlBody, 'utf-8').toString('base64').match(/.{1,76}/g)!.join('\r\n')
 
   if (!attachments || attachments.length === 0) {
     const lines = [
@@ -72,9 +73,9 @@ function makeEmailBody(to: string, subject: string, body: string, attachments?: 
       `Subject: ${encodedSubject}`,
       'MIME-Version: 1.0',
       'Content-Type: text/html; charset=utf-8',
-      'Content-Transfer-Encoding: quoted-printable',
+      'Content-Transfer-Encoding: base64',
       '',
-      htmlBody,
+      htmlBodyB64,
     ]
     return toBase64Url(Buffer.from(lines.join('\r\n')))
   }
@@ -90,9 +91,9 @@ function makeEmailBody(to: string, subject: string, body: string, attachments?: 
     '',
     `--${boundary}`,
     'Content-Type: text/html; charset=utf-8',
-    'Content-Transfer-Encoding: quoted-printable',
+    'Content-Transfer-Encoding: base64',
     '',
-    htmlBody,
+    htmlBodyB64,
   ]
 
   for (const att of attachments) {
