@@ -56,6 +56,11 @@ const STEPS = [
   'Locating decision-maker contacts',
 ]
 
+const TIME_FILTERS = ['This Week', 'This Month', 'This Year', 'All Time'] as const
+type TimeFilter = typeof TIME_FILTERS[number]
+
+const SENT_STATUSES = new Set(['Sent', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Closed'])
+
 interface Lead {
   brand_name: string
   icp_score: string
@@ -66,6 +71,7 @@ interface Lead {
   contact_name: string
   target_role: string
   email_subject: string
+  sent_by?: string
 }
 
 interface Suggestion {
@@ -117,6 +123,9 @@ export default function Dashboard() {
   const [activityItems, setActivityItems] = useState<ActivityItem[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [scheduledEmails, setScheduledEmails] = useState<{id: number; to_email: string; subject: string; brand_name: string; contact_name: string; scheduled_at: string; timezone?: string}[]>([])
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('All Time')
+  const [userFilter, setUserFilter] = useState<string>('All')
+  const [activityExpanded, setActivityExpanded] = useState(true)
   const router = useRouter()
 
   // Full-height layout: override .main overflow while on dashboard
@@ -152,7 +161,6 @@ export default function Dashboard() {
       } catch {
         // silent fail
       }
-      // Auto-load industry signals (from cache if fresh)
       const cachedSignals = readCache<typeof competitorSignals>('cache_competitor_signals')
       if (cachedSignals) {
         setCompetitorSignals(cachedSignals)
@@ -179,7 +187,6 @@ export default function Dashboard() {
       }
     }
     init()
-    // Fetch team activity
     setLoadingActivity(true)
     fetch('/api/activity')
       .then(r => r.json())
@@ -252,6 +259,31 @@ export default function Dashboard() {
     const timers = timings.map((delay, i) => setTimeout(() => setCurrentStep(i), delay))
     return () => timers.forEach(clearTimeout)
   }, [loading])
+
+  // Derived: filtered leads for metrics
+  const filteredLeads = leads.filter(lead => {
+    if (timeFilter !== 'All Time') {
+      const parts = lead.date_added.split('/')
+      if (parts.length === 3) {
+        const date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+        if (!isNaN(date.getTime())) {
+          const now = new Date()
+          if (timeFilter === 'This Week') {
+            const cutoff = new Date(now); cutoff.setDate(now.getDate() - 7)
+            if (date < cutoff) return false
+          } else if (timeFilter === 'This Month') {
+            if (date.getMonth() !== now.getMonth() || date.getFullYear() !== now.getFullYear()) return false
+          } else if (timeFilter === 'This Year') {
+            if (date.getFullYear() !== now.getFullYear()) return false
+          }
+        }
+      }
+    }
+    if (userFilter !== 'All' && (lead.sent_by ?? '') !== userFilter) return false
+    return true
+  })
+
+  const uniqueUsers = Array.from(new Set(leads.map(l => l.sent_by ?? '').filter(Boolean)))
 
   async function fetchSuggestions() {
     setLoadingSuggestions(true)
@@ -593,252 +625,344 @@ export default function Dashboard() {
     )
   }
 
+  const pendingBrandsCount = savedSuggestions.filter(s => {
+    const lead = leads.find(l => l.brand_name.toLowerCase() === s.brand_name.toLowerCase())
+    return !lead || lead.status === 'Researched'
+  }).length
+
+  const metricStats = [
+    { label: 'Total Leads', value: filteredLeads.length, color: 'var(--text-default)', href: '/pipeline' },
+    { label: 'Pending Brands', value: pendingBrandsCount, color: 'var(--brand-400)', href: '/saved' },
+    { label: 'Emails Sent', value: filteredLeads.filter(l => l.status === 'Sent' || l.status === 'Called').length, color: '#050849', href: '/pipeline' },
+    { label: 'Replied', value: filteredLeads.filter(l => l.status === 'Replied').length, color: 'var(--orange-400)', href: '/pipeline' },
+  ]
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', zoom: 0.8 }}>
+      <style>{`
+        @media (max-width: 1280px) {
+          .dash-top .dash-split-left { padding: 20px 24px 20px 28px !important; gap: 14px !important; }
+          .dash-top .dash-split-right { padding: 20px 28px 20px 24px !important; gap: 14px !important; }
+          .dash-metrics { gap: 8px !important; }
+          .dash-metrics > div { padding: 8px 12px !important; }
+          .dash-right-scroll { max-height: 140px !important; }
+          .dash-activity { max-height: 130px !important; }
+          .dash-activity-outer { padding: 0 28px 14px !important; }
+          .dash-intel { padding: 14px 28px 0 !important; }
+        }
+        @media (max-width: 900px) {
+          .dash-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+          .dash-intel { padding: 16px 20px 0 !important; }
+          .dash-top .dash-split { flex-direction: column !important; }
+          .dash-top .dash-split-left { width: 100% !important; padding: 20px 20px 16px !important; border-right: none !important; border-bottom: 0.5px solid var(--black-100) !important; }
+          .dash-top .dash-split-right { padding: 16px 20px 20px !important; }
+          .dash-activity-outer { padding: 16px 20px 0 !important; }
+          .dash-activity { padding: 0 16px 16px !important; }
+          .dash-activity-header { padding: 12px 16px !important; }
+        }
+      `}</style>
 
-      {/* ── Top section: two columns ── */}
-      <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, borderBottom: '1px solid var(--black-100)' }}>
-
-      {/* Left column (60%): greeting, metrics, follow-up */}
-      <div style={{ flex: '0 0 60%', padding: '28px 36px 16px', borderRight: '1px solid var(--black-100)', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Top section: split pane ── */}
+      <div className="dash-top" style={{ borderBottom: '0.5px solid var(--black-100)', flexShrink: 0 }}>
 
         {showOnboarding && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#050849', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <svg width="18" height="18" fill="none" stroke="#fff" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10" strokeWidth="2"/>
-                <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <div style={{ fontSize: 13, color: '#fff' }}>
-                <span style={{ fontWeight: 600 }}>Welcome to Atelier Sales Intelligence.</span> Start by searching for a brand below to generate a research dossier and ICP score.
+          <div style={{ padding: '16px 40px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#050849', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <svg width="16" height="16" fill="none" stroke="#fff" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" strokeWidth="2"/>
+                  <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <div style={{ fontSize: 13, color: '#fff' }}>
+                  <span style={{ fontWeight: 600 }}>Welcome to Atelier Sales Intelligence.</span> Start by searching for a brand below to generate a research dossier and ICP score.
+                </div>
               </div>
+              <button onClick={() => setShowOnboarding(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', fontSize: 18, flexShrink: 0, marginLeft: 16 }}>×</button>
             </div>
-            <button
-              onClick={() => setShowOnboarding(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', fontSize: 18, flexShrink: 0, marginLeft: 16 }}
-            >×</button>
           </div>
         )}
 
-        <div className="page-eyebrow">Dashboard</div>
-        <h1 className="page-title" style={{ marginBottom: 4 }}>
-          {userName ? getGreeting(userName) : 'Good morning'}
-        </h1>
-        <p className="page-sub" style={{ marginBottom: 16 }}>Score any ANZ consumer brand against your ICP, surface buying signals, and find the right contact.</p>
+        {/* Split pane row */}
+        <div className="dash-split" style={{ display: 'flex', alignItems: 'stretch', minHeight: 0 }}>
 
-        {/* 2×2 Metrics grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 16 }}>
-          {[
-            { label: 'Total Leads', value: leads.length, color: 'var(--text-default)' },
-            { label: 'Hot Leads', value: leads.filter(l => l.score_band === 'Hot').length, color: 'var(--green-400)' },
-            { label: 'Emails Sent', value: leads.filter(l => l.status === 'Sent' || l.status === 'Called').length, color: '#050849' },
-            { label: 'Replied', value: leads.filter(l => l.status === 'Replied').length, color: 'var(--orange-400)' },
-          ].map(stat => (
-            <div key={stat.label} style={{ background: '#fff', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-md)', padding: '14px 20px' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-400)', marginBottom: 6 }}>{stat.label}</div>
-              <div style={{ fontSize: 40, fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
+          {/* ── Left: greeting + metrics + filters ── */}
+          <div className="dash-split-left" style={{ width: '40%', flexShrink: 0, padding: '28px 32px 28px 40px', borderRight: '0.5px solid var(--black-100)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Greeting */}
+            <div>
+              <div className="page-eyebrow">Dashboard</div>
+              <h1 className="page-title" style={{ marginBottom: 0 }}>
+                {userName ? getGreeting(userName) : 'Good morning'}
+              </h1>
             </div>
-          ))}
-        </div>
 
-        {/* Due for follow-up */}
-        {overdueLeads.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div>
-                <div className="section-label" style={{ marginBottom: 2, color: 'var(--orange-400)' }}>⏰ Due for follow-up</div>
-                <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>Contacted 7+ days ago with no reply recorded.</div>
+            {/* Metrics 2×2 grid */}
+            <div className="dash-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              {metricStats.map(stat => (
+                <div
+                  key={stat.label}
+                  onClick={() => router.push(stat.href)}
+                  style={{ background: '#fff', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-md)', padding: '12px 16px', cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--slate-300)'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--black-100)'; e.currentTarget.style.boxShadow = 'none' }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--slate-400)', marginBottom: 6 }}>{stat.label}</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Filters */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <select
+                value={timeFilter}
+                onChange={e => setTimeFilter(e.target.value as TimeFilter)}
+                style={{ fontSize: 12, padding: '4px 10px', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)', background: timeFilter !== 'All Time' ? '#050849' : '#fff', color: timeFilter !== 'All Time' ? '#fff' : 'var(--text-default)', cursor: 'pointer', height: 28, outline: 'none' }}
+              >
+                {TIME_FILTERS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              {uniqueUsers.length > 0 && (
+                <select
+                  value={userFilter}
+                  onChange={e => setUserFilter(e.target.value)}
+                  style={{ fontSize: 12, padding: '4px 10px', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)', background: userFilter !== 'All' ? '#050849' : '#fff', color: userFilter !== 'All' ? '#fff' : 'var(--text-default)', cursor: 'pointer', height: 28, outline: 'none' }}
+                >
+                  <option value="All">All users</option>
+                  {uniqueUsers.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              )}
+              {(timeFilter !== 'All Time' || userFilter !== 'All') && (
+                <button onClick={() => { setTimeFilter('All Time'); setUserFilter('All') }} style={{ fontSize: 11, color: 'var(--slate-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' }}>Clear</button>
+              )}
+            </div>
+
+            {/* View pipeline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--slate-400)' }}>{leads.length} {leads.length === 1 ? 'brand' : 'brands'} in pipeline</span>
+              <a href="/pipeline" className="btn btn-secondary btn-sm">View full pipeline →</a>
+            </div>
+
+          </div>{/* end left */}
+
+          {/* ── Right: follow-ups + scheduled sends ── */}
+          <div className="dash-split-right" style={{ flex: 1, padding: '28px 40px 28px 32px', display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+
+            {/* Due for follow-up */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <div className="section-label" style={{ margin: 0, color: 'var(--orange-400)' }}>⏰ Due for follow-up</div>
+                {overdueLeads.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 500, background: 'var(--orange-100)', color: 'var(--orange-400)', borderRadius: 10, padding: '1px 7px' }}>{overdueLeads.length}</span>
+                )}
               </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {overdueLeads.map((lead, i) => (
-                <div key={i} className="card-hair" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: 'var(--orange-200)', background: 'var(--orange-100)' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span onClick={() => handleLeadClick(lead)} style={{ fontSize: 14, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--black-200)' }}>{lead.brand_name}</span>
-                      <span className={getBandClass(lead.score_band)} style={{ fontSize: 11 }}>{lead.score_band}</span>
-                      <span style={{ fontSize: 11, color: 'var(--slate-400)' }}>· Sent {lead.date_added}</span>
-                      {leadTimings[lead.brand_name] && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
-                          padding: '2px 8px', borderRadius: 4,
-                          background: leadTimings[lead.brand_name].urgency === 'high' ? '#050849' : 'var(--orange-100)',
-                          color: leadTimings[lead.brand_name].urgency === 'high' ? '#fff' : 'var(--orange-400)'
-                        }}>
-                          {leadTimings[lead.brand_name].urgency === 'high' ? '⚡ Reach out now' : `📅 ${leadTimings[lead.brand_name].recommended_day}`}
-                        </span>
-                      )}
+              <div className="dash-right-scroll" style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {overdueLeads.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--slate-300)', padding: '12px 0' }}>No follow-ups due</div>
+                ) : overdueLeads.map((lead, i) => (
+                  <div key={i} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--orange-200)', background: 'var(--orange-50, #fff8f0)', borderRadius: 'var(--radius-md)', flexShrink: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                        <span onClick={() => handleLeadClick(lead)} style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--black-200)' }}>{lead.brand_name}</span>
+                        <span className={getBandClass(lead.score_band)} style={{ fontSize: 10 }}>{lead.score_band}</span>
+                        <span style={{ fontSize: 11, color: 'var(--slate-400)' }}>· {lead.date_added}</span>
+                        {leadTimings[lead.brand_name] && (
+                          <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '2px 7px', borderRadius: 4, background: leadTimings[lead.brand_name].urgency === 'high' ? '#050849' : 'var(--orange-100)', color: leadTimings[lead.brand_name].urgency === 'high' ? '#fff' : 'var(--orange-400)' }}>
+                            {leadTimings[lead.brand_name].urgency === 'high' ? '⚡ Now' : `📅 ${leadTimings[lead.brand_name].recommended_day}`}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--slate-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {lead.contact_name ? lead.contact_name : 'No reply recorded'}
+                        {lead.email_subject ? ` · "${lead.email_subject}"` : ''}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>
-                      {lead.contact_name ? `Last contacted: ${lead.contact_name}` : 'No reply recorded'}
-                      {lead.email_subject ? ` · "${lead.email_subject}"` : ''}
-                    </div>
-                  </div>
-                  <div style={{ flexShrink: 0 }}>
                     <button
                       onClick={async () => {
                         setLoading(true)
                         setSearchedBrand(lead.brand_name)
                         try {
-                          const res = await fetch('/api/research', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ brand_name: lead.brand_name })
-                          })
+                          const res = await fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brand_name: lead.brand_name }) })
                           const data = await res.json()
                           if (data.success) {
                             localStorage.setItem('current_dossier', JSON.stringify(data.dossier))
                             localStorage.removeItem('selected_contact')
-                            localStorage.setItem('selected_contact', JSON.stringify({
-                              name: lead.contact_name,
-                              role: lead.target_role,
-                              email: ''
-                            }))
-                            localStorage.setItem('follow_up_context', JSON.stringify({
-                              original_subject: lead.email_subject,
-                              contact_name: lead.contact_name,
-                              date_sent: lead.date_added
-                            }))
+                            localStorage.setItem('selected_contact', JSON.stringify({ name: lead.contact_name, role: lead.target_role, email: '' }))
+                            localStorage.setItem('follow_up_context', JSON.stringify({ original_subject: lead.email_subject, contact_name: lead.contact_name, date_sent: lead.date_added }))
                             router.push('/email')
                           }
-                        } catch {
-                          setLoading(false)
-                        }
+                        } catch { setLoading(false) }
                       }}
                       className="btn btn-primary btn-sm"
+                      style={{ flexShrink: 0 }}
                     >
                       Draft follow-up
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {scheduledEmails.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <div className="section-label" style={{ color: '#050849' }}>🕐 Scheduled sends</div>
-              <span style={{ fontSize: 11, fontWeight: 500, background: '#050849', color: '#fff', borderRadius: 10, padding: '1px 7px' }}>{scheduledEmails.length}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {scheduledEmails.map(e => (
-                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#f0f0ff', border: '1px solid #d0d0ee', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-default)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {e.brand_name || e.to_email}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--slate-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      To: {e.to_email}{e.contact_name ? ` · ${e.contact_name}` : ''}
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: '#050849', marginTop: 3 }}>
-                      📅 {new Date(e.scheduled_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} {(() => { try { return new Intl.DateTimeFormat('en-AU', { timeZone: e.timezone ?? 'Australia/Sydney', timeZoneName: 'short' }).formatToParts(new Date(e.scheduled_at)).find(p => p.type === 'timeZoneName')?.value ?? 'AEST' } catch { return 'AEST' } })()}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      await fetch(`/api/schedule-email?id=${e.id}`, { method: 'DELETE' })
-                      setScheduledEmails(prev => prev.filter(x => x.id !== e.id))
-                    }}
-                    className="btn btn-ghost btn-sm"
-                    style={{ flexShrink: 0, color: 'var(--red-500)', borderColor: 'var(--red-300)' }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--black-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, color: 'var(--slate-400)' }}>{leads.length} {leads.length === 1 ? 'brand' : 'brands'} in pipeline</span>
-          <a href="/pipeline" className="btn btn-secondary btn-sm">View full pipeline →</a>
-        </div>
-
-      </div>
-
-      {/* Right column (40%): Team Activity — independently scrollable */}
-      <div style={{ flex: '0 0 40%', padding: '24px 28px 0', marginBottom: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div className="section-label">Team Activity</div>
-          <button
-            onClick={() => {
-              setLoadingActivity(true)
-              fetch('/api/activity').then(r => r.json()).then(data => {
-                if (data.success) setActivityItems(data.activity)
-              }).catch(() => {}).finally(() => setLoadingActivity(false))
-            }}
-            disabled={loadingActivity}
-            className="btn btn-secondary btn-sm"
-          >
-            {loadingActivity ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
-        {loadingActivity && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate-400)', fontSize: 13, padding: '12px 0' }}>
-            <div className="spinner" /> Loading activity…
-          </div>
-        )}
-        {!loadingActivity && activityItems.length === 0 && (
-          <div style={{ fontSize: 13, color: 'var(--slate-400)', padding: '16px 0' }}>
-            No recent activity yet.
-          </div>
-        )}
-        {activityItems.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {activityItems.map((item, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 12,
-                padding: '10px 0',
-                borderBottom: i < activityItems.length - 1 ? '1px solid var(--black-100)' : 'none'
-              }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                  background: 'var(--slate-100)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'var(--slate-500)', marginTop: 1
-                }}>
-                  {activityIcon(item.icon)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 3 }}>
-                    {item.brand ? (() => {
-                      const idx = item.text.lastIndexOf(item.brand)
-                      if (idx === -1) return item.text
-                      return (
-                        <>
-                          {item.text.slice(0, idx)}
-                          <span
-                            onClick={() => handleResearch(item.brand)}
-                            style={{ cursor: searchedBrand === item.brand && loading ? 'wait' : 'pointer', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--black-200)' }}
-                          >{item.brand}</span>
-                          {item.text.slice(idx + item.brand.length)}
-                        </>
-                      )
-                    })() : item.text}
-                  </div>
-                  <span style={{ fontSize: 11, color: 'var(--slate-400)' }}>{relativeDate(item.date)}</span>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        </div>{/* end scrollable activity */}
-      </div>
+            </div>
 
+            {/* Scheduled sends */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <div className="section-label" style={{ margin: 0, color: '#050849' }}>🕐 Scheduled sends</div>
+                {scheduledEmails.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 500, background: '#050849', color: '#fff', borderRadius: 10, padding: '1px 7px' }}>{scheduledEmails.length}</span>
+                )}
+              </div>
+              <div className="dash-right-scroll" style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {scheduledEmails.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--slate-300)', padding: '12px 0' }}>No scheduled sends</div>
+                ) : scheduledEmails.map(e => (
+                  <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#f0f0ff', border: '1px solid #d0d0ee', borderRadius: 'var(--radius-md)', flexShrink: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-default)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {e.brand_name || e.to_email}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--slate-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        To: {e.to_email}{e.contact_name ? ` · ${e.contact_name}` : ''}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: '#050849', marginTop: 2 }}>
+                        📅 {new Date(e.scheduled_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} {(() => { try { return new Intl.DateTimeFormat('en-AU', { timeZone: e.timezone ?? 'Australia/Sydney', timeZoneName: 'short' }).formatToParts(new Date(e.scheduled_at)).find(p => p.type === 'timeZoneName')?.value ?? 'AEST' } catch { return 'AEST' } })()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/schedule-email?id=${e.id}`, { method: 'DELETE' })
+                        setScheduledEmails(prev => prev.filter(x => x.id !== e.id))
+                      }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ flexShrink: 0, color: 'var(--red-500)', borderColor: 'var(--red-300)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>{/* end right */}
+        </div>{/* end split pane row */}
       </div>{/* end top section */}
 
-      {/* ── Bottom section: intelligence tabs ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '8px 36px 0' }}>
+      {/* ── Team Activity: card style ── */}
+      <div className="dash-activity-outer" style={{ flexShrink: 0, padding: '0 40px 20px', marginTop: 24, paddingTop: 16 }}>
+        <div style={{ background: '#f9f9f9', border: '1px solid var(--black-100)', borderRadius: 12 }}>
+        <div
+          className="dash-activity-header"
+          style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+          onClick={() => setActivityExpanded(v => !v)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="section-label" style={{ margin: 0 }}>Team Activity</div>
+            {activityItems.length > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 500, background: 'var(--slate-100)', color: 'var(--slate-400)', borderRadius: 10, padding: '1px 7px' }}>{activityItems.length}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                setLoadingActivity(true)
+                fetch('/api/activity').then(r => r.json()).then(data => {
+                  if (data.success) setActivityItems(data.activity)
+                }).catch(() => {}).finally(() => setLoadingActivity(false))
+              }}
+              disabled={loadingActivity}
+              className="btn btn-secondary btn-sm"
+            >
+              {loadingActivity ? 'Loading…' : 'Refresh'}
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--slate-400)', userSelect: 'none' }}>
+              {activityExpanded ? '▲' : '▼'}
+            </span>
+          </div>
+        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0 }}>
-          <div className="role-row" style={{ margin: 0 }}>
-            <button onClick={() => setActiveIntelTab('industry')} className={`role-btn ${activeIntelTab === 'industry' ? 'active' : ''}`} style={{ fontSize: 13, padding: '6px 16px' }}>Industry Signals</button>
-            <button onClick={() => setActiveIntelTab('market')} className={`role-btn ${activeIntelTab === 'market' ? 'active' : ''}`} style={{ fontSize: 13, padding: '6px 16px' }}>Market Pulse</button>
-            <button onClick={() => setActiveIntelTab('trends')} className={`role-btn ${activeIntelTab === 'trends' ? 'active' : ''}`} style={{ fontSize: 13, padding: '6px 16px' }}>Trending Now</button>
+        {activityExpanded && (
+          <div className="dash-activity" style={{ padding: '0 20px 16px', maxHeight: 180, overflowY: 'auto', borderTop: '1px solid var(--black-100)' }}>
+            {loadingActivity && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate-400)', fontSize: 13, padding: '10px 0' }}>
+                <div className="spinner" /> Loading activity…
+              </div>
+            )}
+            {!loadingActivity && activityItems.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--slate-400)', padding: '10px 0' }}>
+                No recent activity yet.
+              </div>
+            )}
+            {activityItems.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 24px' }}>
+                {activityItems.map((item, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    padding: '8px 0',
+                    borderBottom: '1px solid var(--black-100)'
+                  }}>
+                    <div style={{
+                      width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--slate-100)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'var(--slate-500)', marginTop: 1
+                    }}>
+                      {activityIcon(item.icon)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 2 }}>
+                        {item.brand ? (() => {
+                          const idx = item.text.lastIndexOf(item.brand)
+                          if (idx === -1) return item.text
+                          return (
+                            <>
+                              {item.text.slice(0, idx)}
+                              <span
+                                onClick={e => { e.stopPropagation(); handleResearch(item.brand) }}
+                                style={{ cursor: searchedBrand === item.brand && loading ? 'wait' : 'pointer', fontWeight: 600, textDecoration: 'underline', textDecorationColor: 'var(--black-200)' }}
+                              >{item.brand}</span>
+                              {item.text.slice(idx + item.brand.length)}
+                            </>
+                          )
+                        })() : item.text}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--slate-400)' }}>{relativeDate(item.date)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        </div>
+      </div>{/* end team activity */}
+
+      {/* ── Intelligence tabs ── */}
+      <div className="dash-intel" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '20px 40px 0' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {([
+              { key: 'industry' as const, label: 'Industry Signals' },
+              { key: 'market' as const, label: 'Market Pulse' },
+              { key: 'trends' as const, label: 'Trending Now' },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveIntelTab(tab.key)}
+                style={{
+                  fontSize: 13, padding: '8px 18px',
+                  background: activeIntelTab === tab.key ? '#050849' : 'transparent',
+                  color: activeIntelTab === tab.key ? '#fff' : 'var(--slate-500)',
+                  border: '1px solid',
+                  borderColor: activeIntelTab === tab.key ? '#050849' : 'var(--black-100)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: activeIntelTab === tab.key ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {activeIntelTab === 'industry' && <button onClick={() => competitorSignalsLoaded ? fetchCompetitorSignals(true) : fetchCompetitorSignals()} disabled={loadingCompetitorSignals} className="btn btn-secondary btn-sm">{loadingCompetitorSignals ? 'Scanning...' : competitorSignalsLoaded ? 'Refresh' : 'Scan industry'}</button>}
@@ -847,17 +971,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, paddingBottom: 32 }}>
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, paddingBottom: 24 }}>
         {activeIntelTab === 'industry' && (
           <>
-            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 14 }}>Latest news from prestige beauty, health and wellness — potential outreach triggers for Atelier.</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 10 }}>Latest news from prestige beauty, health and wellness — potential outreach triggers for Atelier.</div>
             {loadingCompetitorSignals && <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--slate-400)', fontSize: 13 }}><div className="spinner" /> Scanning industry activity...</div>}
             {!competitorSignalsLoaded && !loadingCompetitorSignals && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)', marginBottom: 12 }}>Scan for the latest beauty industry news.</div><button onClick={() => fetchCompetitorSignals()} className="btn btn-primary btn-sm">Scan industry</button></div>}
             {competitorSignalsLoaded && competitorSignals.length === 0 && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)' }}>No recent signals found.</div></div>}
             {competitorSignals.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {competitorSignals.map((signal, i) => (
-                  <div key={i} className="card-hair" style={{ padding: '14px 18px' }}>
+                  <div key={i} className="card-hair" style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                       <span onClick={() => handleResearch(signal.brand ?? signal.competitor ?? '')} style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--brand-400)', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--brand-200)' }}>{signal.brand ?? signal.competitor}</span>
                       <span style={{ fontSize: 11, color: 'var(--slate-300)' }}>· {signal.date}</span>
@@ -873,14 +997,14 @@ export default function Dashboard() {
 
         {activeIntelTab === 'market' && (
           <>
-            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 14 }}>Global supply chain and trade signals affecting beauty manufacturing.</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 10 }}>Global supply chain and trade signals affecting beauty manufacturing.</div>
             {loadingMarketPulse && <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--slate-400)', fontSize: 13 }}><div className="spinner" /> Scanning global supply chain signals...</div>}
             {!marketPulseLoaded && !loadingMarketPulse && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)', marginBottom: 12 }}>Scan for global supply chain and trade signals.</div><button onClick={() => fetchMarketPulse()} className="btn btn-primary btn-sm">Scan market</button></div>}
             {marketPulseLoaded && marketPulse.length === 0 && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)' }}>No market signals found. Try again later.</div></div>}
             {marketPulse.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 {marketPulse.map((signal, i) => (
-                  <div key={i} className="card-hair" style={{ padding: '14px 18px' }}>
+                  <div key={i} className="card-hair" style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '2px 8px', borderRadius: 4, background: signal.urgency === 'high' ? 'var(--red-100)' : signal.urgency === 'medium' ? 'var(--orange-100)' : 'var(--slate-100)', color: signal.urgency === 'high' ? 'var(--red-500)' : signal.urgency === 'medium' ? 'var(--orange-400)' : 'var(--slate-400)' }}>{signal.urgency} urgency</span>
                       <span style={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', color: 'var(--brand-400)', background: 'var(--brand-100)', padding: '2px 8px', borderRadius: 4 }}>{signal.signal_type}</span>
@@ -898,14 +1022,14 @@ export default function Dashboard() {
 
         {activeIntelTab === 'trends' && (
           <>
-            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 14 }}>Current beauty trends matched against your pipeline and saved brands.</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 10 }}>Current beauty trends matched against your pipeline and saved brands.</div>
             {loadingTrends && <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--slate-400)', fontSize: 13 }}><div className="spinner" /> Matching current beauty trends to your pipeline...</div>}
             {!trendsLoaded && !loadingTrends && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)', marginBottom: 12 }}>Match current beauty trends against your pipeline brands.</div><button onClick={() => fetchTrendMatches()} className="btn btn-primary btn-sm">Match trends</button></div>}
             {trendsLoaded && trendMatches.length === 0 && <div className="card-hair" style={{ padding: '20px 24px', textAlign: 'center' }}><div style={{ fontSize: 13, color: 'var(--slate-400)' }}>No trend matches found.</div></div>}
             {trendMatches.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 {trendMatches.map((match, i) => (
-                  <div key={i} className="card-hair" style={{ padding: '14px 18px' }}>
+                  <div key={i} className="card-hair" style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 4, background: match.momentum === 'rising' ? 'var(--green-100)' : match.momentum === 'peak' ? '#050849' : 'var(--slate-100)', color: match.momentum === 'rising' ? 'var(--green-400)' : match.momentum === 'peak' ? '#fff' : 'var(--slate-400)' }}>{match.momentum === 'rising' ? '↑ Rising' : match.momentum === 'peak' ? '⚡ Peak' : 'Established'}</span>
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--brand-400)', background: 'var(--brand-100)', padding: '2px 8px', borderRadius: 4 }}>{match.trend}</span>
@@ -922,7 +1046,7 @@ export default function Dashboard() {
         )}
 
         </div>{/* end intel scroll */}
-      </div>{/* end bottom section */}
+      </div>{/* end intel section */}
     </div>
   )
 }

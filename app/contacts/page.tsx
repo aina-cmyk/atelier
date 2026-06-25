@@ -189,7 +189,7 @@ export default function ContactsPage() {
   })
 
   return (
-    <div onClick={() => setSelectedContact(null)}>
+    <div onClick={() => setSelectedContact(null)} style={{ zoom: 0.8 }}>
       <div className="page-eyebrow">Contacts</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h1 style={{ fontSize: 28, fontWeight: 500, letterSpacing: '-0.5px', margin: 0 }}>{dossier.brand_name}</h1>

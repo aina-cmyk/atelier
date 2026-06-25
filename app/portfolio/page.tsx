@@ -19,13 +19,20 @@ interface QueueItem {
   category: string
   reason: string
   signal: string
-  source: 'saved' | 'suggested'
+}
+
+interface SavedItem {
+  brand_name: string
+  category: string
+  reason: string
+  signal: string
 }
 
 type Detail =
   | { kind: 'empty' }
   | { kind: 'preview'; dossier: PortfolioDossier }
   | { kind: 'researching'; brandName: string }
+  | { kind: 'saved-preview'; brand: SavedItem }
 
 const ICP_COLOR = (s: number) =>
   s >= 80 ? '#1d9e75' : s >= 60 ? '#e8930a' : s >= 45 ? '#888888' : '#cc3333'
@@ -52,16 +59,16 @@ function Chip({ band }: { band: string }) {
 }
 
 export default function PortfolioPage() {
-  const [dossiers, setDossiers]       = useState<PortfolioDossier[]>([])
-  const [queue, setQueue]             = useState<QueueItem[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [loadingSugg, setLoadingSugg] = useState(false)
-  const [search, setSearch]           = useState('')
-  const [band, setBand]               = useState('All')
-  const [selected, setSelected]       = useState<string | null>(null)
-  const [detail, setDetail]           = useState<Detail>({ kind: 'empty' })
-  const [savedSet, setSavedSet]       = useState<Set<string>>(new Set())
-  const [savingSet, setSavingSet]     = useState<Set<string>>(new Set())
+  const [dossiers, setDossiers]         = useState<PortfolioDossier[]>([])
+  const [savedBrands, setSavedBrands]   = useState<SavedItem[]>([])
+  const [queue, setQueue]               = useState<QueueItem[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [loadingSugg, setLoadingSugg]   = useState(false)
+  const [search, setSearch]             = useState('')
+  const [selected, setSelected]         = useState<string | null>(null)
+  const [detail, setDetail]             = useState<Detail>({ kind: 'empty' })
+  const [savedSet, setSavedSet]         = useState<Set<string>>(new Set())
+  const [savingSet, setSavingSet]       = useState<Set<string>>(new Set())
   const router = useRouter()
 
   useEffect(() => {
@@ -74,35 +81,30 @@ export default function PortfolioPage() {
     Promise.all([
       fetch('/api/portfolio').then(r => r.json()),
       fetch('/api/saved-suggestions').then(r => r.json()),
-    ]).then(([pd, sd]) => {
+      fetch('/api/pipeline').then(r => r.json()),
+    ]).then(([pd, sd, pl]) => {
       if (pd.success) setDossiers(pd.dossiers)
       if (sd.success) {
-        setQueue(
-          (sd.suggestions as { brand_name: string; category: string; reason: string; signal: string }[])
-            .map(s => ({ ...s, source: 'saved' as const }))
+        const pipelineNames = new Set(
+          (pl.leads ?? []).map((l: { brand_name: string }) => l.brand_name.toLowerCase())
         )
+        const filtered = (sd.suggestions as SavedItem[]).filter(
+          s => !pipelineNames.has(s.brand_name.toLowerCase())
+        )
+        setSavedBrands(filtered)
       }
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   const typing = search.trim().length > 0
 
-  const visible = dossiers
-    .filter(d => !typing || d.brand_name.toLowerCase().includes(search.toLowerCase()))
-    .filter(d => band === 'All' || d.score_band === band)
+  const visibleSaved = savedBrands
+    .filter(s => !typing || s.brand_name.toLowerCase().includes(search.toLowerCase()))
 
   const exactMatch = dossiers.some(
     d => d.brand_name.toLowerCase() === search.trim().toLowerCase()
   )
   const showResearch = typing && !exactMatch
-
-  const counts: Record<string, number> = {
-    All:   dossiers.length,
-    Hot:   dossiers.filter(d => d.score_band === 'Hot').length,
-    Warm:  dossiers.filter(d => d.score_band === 'Warm').length,
-    Watch: dossiers.filter(d => d.score_band === 'Watch').length,
-    Pass:  dossiers.filter(d => d.score_band === 'Pass').length,
-  }
 
   function pickDossier(d: PortfolioDossier) {
     setSelected(d.brand_name)
@@ -142,6 +144,16 @@ export default function PortfolioPage() {
     router.push('/dossier')
   }
 
+  function openSavedBrand(brand: SavedItem) {
+    const existing = dossiers.find(d => d.brand_name.toLowerCase() === brand.brand_name.toLowerCase())
+    if (existing) {
+      pickDossier(existing)
+    } else {
+      setSelected(brand.brand_name)
+      setDetail({ kind: 'saved-preview', brand })
+    }
+  }
+
   async function getAiSuggestions() {
     if (loadingSugg) return
     setLoadingSugg(true)
@@ -153,8 +165,7 @@ export default function PortfolioPage() {
       })
       const data = await res.json()
       if (data.success) {
-        const fresh = ((data.suggestions ?? []) as { brand_name: string; category: string; reason: string; signal: string }[])
-          .map(s => ({ ...s, source: 'suggested' as const }))
+        const fresh = (data.suggestions ?? []) as QueueItem[]
         setQueue(prev => {
           const seen = new Set(prev.map(q => q.brand_name.toLowerCase()))
           return [...prev, ...fresh.filter(s => !seen.has(s.brand_name.toLowerCase()))]
@@ -166,7 +177,7 @@ export default function PortfolioPage() {
   }
 
   async function removeQueue(item: QueueItem) {
-    if (item.source === 'saved' || savedSet.has(item.brand_name)) {
+    if (savedSet.has(item.brand_name)) {
       await fetch(
         `/api/saved-suggestions?brand_name=${encodeURIComponent(item.brand_name)}`,
         { method: 'DELETE' }
@@ -190,7 +201,7 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#fff' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#fff', zoom: 0.8 }}>
 
       {/* ══════════════════════════════════════════
           TOP — full-width hero search
@@ -258,47 +269,39 @@ export default function PortfolioPage() {
       {/* ══════════════════════════════════════════
           MIDDLE — 50/50 split pane
       ══════════════════════════════════════════ */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-        {/* Left: filter tabs + portfolio list — capped at 400px */}
+        {/* Left: saved brands */}
         <div style={{
           width: '50%', flexShrink: 0,
-          maxHeight: 400,
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden',
+          alignSelf: 'stretch',
         }}>
 
-          {/* Filter tabs — always visible */}
+          {/* Header row */}
           <div style={{
             flexShrink: 0,
             padding: '10px 16px',
             borderBottom: '0.5px solid var(--black-100)',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            {['All', 'Hot', 'Warm', 'Watch', 'Pass'].map(b => (
-              <button key={b} onClick={() => setBand(b)} style={{
-                fontSize: 11, fontWeight: 500,
-                padding: '4px 10px', borderRadius: 6,
-                border: '0.5px solid', cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                background: band === b ? '#050849' : '#fff',
-                color: band === b ? '#fff' : 'var(--slate-500)',
-                borderColor: band === b ? '#050849' : 'var(--black-100)',
-              }}>
-                {b}
-                <span style={{ opacity: 0.65, fontSize: 10, fontWeight: 400 }}>{counts[b]}</span>
-              </button>
-            ))}
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--slate-400)' }}>
-              {visible.length} brand{visible.length !== 1 ? 's' : ''}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#050849', opacity: 0.55 }}>
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-500)' }}>
+              Saved
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--slate-400)', marginLeft: 2 }}>
+              {visibleSaved.length}
             </span>
           </div>
 
-          {/* Scrollable portfolio list */}
+          {/* Scrollable saved brand rows */}
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {loading && (
               <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--slate-400)' }}>
-                <div className="spinner" />Loading portfolio…
+                <div className="spinner" />Loading…
               </div>
             )}
 
@@ -320,17 +323,22 @@ export default function PortfolioPage() {
                   <path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
                 Research &ldquo;{search.trim()}&rdquo;
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--slate-400)', fontWeight: 400 }}>not in portfolio</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--slate-400)', fontWeight: 400 }}>not saved</span>
               </div>
             )}
 
-            {/* Portfolio rows */}
-            {visible.map((d, i) => {
-              const active = selected === d.brand_name
+            {!loading && visibleSaved.length === 0 && !showResearch && (
+              <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 12, color: 'var(--slate-400)' }}>
+                {typing ? 'No saved brands match your search' : 'No saved brands yet'}
+              </div>
+            )}
+
+            {visibleSaved.map((s, i) => {
+              const active = selected === s.brand_name
               return (
                 <div
-                  key={`${i}-${d.brand_name}`}
-                  onClick={() => pickDossier(d)}
+                  key={`saved-${i}-${s.brand_name}`}
+                  onClick={() => openSavedBrand(s)}
                   style={{
                     padding: '10px 16px 10px 14px',
                     borderBottom: '0.5px solid var(--black-100)',
@@ -346,36 +354,18 @@ export default function PortfolioPage() {
                       color: 'var(--text-default)',
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
-                      {d.brand_name}
+                      {s.brand_name}
                     </div>
                     <div style={{
                       fontSize: 11, color: 'var(--slate-400)', marginTop: 1,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
-                      {d.category.split(/[,(]/)[0].trim()}
+                      {s.category.split(/[,(]/)[0].trim()}
                     </div>
                   </div>
-                  <Chip band={d.score_band} />
-                  <span style={{
-                    fontSize: 13, fontWeight: 600,
-                    color: ICP_COLOR(d.icp_score),
-                    width: 28, textAlign: 'right', flexShrink: 0,
-                  }}>
-                    {d.icp_score}
-                  </span>
                 </div>
               )
             })}
-
-            {!loading && visible.length === 0 && !showResearch && (
-              <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 12, color: 'var(--slate-400)' }}>
-                {typing
-                  ? 'No portfolio matches — try the Research button above'
-                  : dossiers.length === 0
-                  ? 'No brands researched yet'
-                  : 'No brands in this band'}
-              </div>
-            )}
           </div>
         </div>
 
@@ -423,6 +413,64 @@ export default function PortfolioPage() {
               </div>
             </div>
           )}
+
+          {detail.kind === 'saved-preview' && (() => {
+            const b = detail.brand
+            return (
+              <div style={{ padding: '40px 36px' }}>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+                  color: '#050849', background: 'var(--brand-50, #f0f1ff)',
+                  padding: '3px 9px', borderRadius: 4, marginBottom: 16,
+                }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  Saved
+                </div>
+                <h2 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px', letterSpacing: '-0.3px', color: 'var(--text-default)' }}>
+                  {b.brand_name}
+                </h2>
+                <div style={{ fontSize: 12, color: 'var(--slate-400)', marginBottom: 20 }}>
+                  {b.category.split(/[,(]/)[0].trim()}
+                </div>
+
+                {b.reason && (
+                  <p style={{ fontSize: 13, color: 'var(--slate-500)', lineHeight: 1.7, margin: '0 0 16px' }}>
+                    {b.reason}
+                  </p>
+                )}
+
+                {b.signal && (
+                  <div style={{
+                    fontSize: 12, color: 'var(--brand-500, #050849)', lineHeight: 1.5,
+                    background: 'var(--brand-50, #f0f1ff)', padding: '10px 14px',
+                    borderRadius: 8, border: '0.5px solid var(--brand-100, #d8daff)',
+                    marginBottom: 28,
+                  }}>
+                    {b.signal}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    onClick={() => research(b.brand_name)}
+                    style={{
+                      width: '100%', height: 44, fontSize: 14, fontWeight: 600,
+                      background: '#050849', color: '#fff',
+                      border: 'none', borderRadius: 8, cursor: 'pointer',
+                    }}
+                  >
+                    Research {b.brand_name} →
+                  </button>
+                  <p style={{ fontSize: 12, color: 'var(--slate-400)', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+                    No dossier yet — run research to get ICP score, signals, and full analysis.
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
 
           {detail.kind === 'preview' && (() => {
             const d = detail.dossier
@@ -527,7 +575,7 @@ export default function PortfolioPage() {
       </div>
 
       {/* ══════════════════════════════════════════
-          BOTTOM — full-width queue
+          BOTTOM — full-width AI suggestions queue
       ══════════════════════════════════════════ */}
       <div style={{
         flexShrink: 0,
@@ -572,7 +620,7 @@ export default function PortfolioPage() {
         {/* Horizontal card strip */}
         {queue.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--slate-400)', paddingTop: 2 }}>
-            No brands queued. Save brands from a dossier or get AI suggestions.
+            No AI suggestions yet. Click &ldquo;Get AI suggestions&rdquo; to generate brand ideas.
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 2 }}>
@@ -588,7 +636,7 @@ export default function PortfolioPage() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                      {(item.source === 'saved' || savedSet.has(item.brand_name)) ? (
+                      {savedSet.has(item.brand_name) ? (
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#050849', flexShrink: 0 }}>
                           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
                         </svg>
@@ -629,24 +677,22 @@ export default function PortfolioPage() {
                   </div>
                 )}
 
-                {/* Save button — suggested items only */}
-                {item.source === 'suggested' && (
-                  <button
-                    onClick={() => saveQueueItem(item)}
-                    disabled={savingSet.has(item.brand_name) || savedSet.has(item.brand_name)}
-                    style={{
-                      fontSize: 11, fontWeight: 600, padding: '5px 0',
-                      background: savedSet.has(item.brand_name) ? 'var(--green-100)' : '#fff',
-                      color: savedSet.has(item.brand_name) ? 'var(--green-400)' : 'var(--slate-500)',
-                      border: '0.5px solid',
-                      borderColor: savedSet.has(item.brand_name) ? 'var(--green-300)' : 'var(--black-100)',
-                      borderRadius: 6, cursor: savedSet.has(item.brand_name) ? 'default' : 'pointer',
-                      width: '100%',
-                    }}
-                  >
-                    {savingSet.has(item.brand_name) ? 'Saving…' : savedSet.has(item.brand_name) ? 'Saved ✓' : 'Save'}
-                  </button>
-                )}
+                {/* Save button */}
+                <button
+                  onClick={() => saveQueueItem(item)}
+                  disabled={savingSet.has(item.brand_name) || savedSet.has(item.brand_name)}
+                  style={{
+                    fontSize: 11, fontWeight: 600, padding: '5px 0',
+                    background: savedSet.has(item.brand_name) ? 'var(--green-100)' : '#fff',
+                    color: savedSet.has(item.brand_name) ? 'var(--green-400)' : 'var(--slate-500)',
+                    border: '0.5px solid',
+                    borderColor: savedSet.has(item.brand_name) ? 'var(--green-300)' : 'var(--black-100)',
+                    borderRadius: 6, cursor: savedSet.has(item.brand_name) ? 'default' : 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  {savingSet.has(item.brand_name) ? 'Saving…' : savedSet.has(item.brand_name) ? 'Saved ✓' : 'Save'}
+                </button>
               </div>
             ))}
           </div>

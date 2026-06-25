@@ -135,7 +135,7 @@ export default function TemplatesPage() {
     : templates.filter(t => t.role === filterType)
 
   return (
-    <div>
+    <div style={{ zoom: 0.8 }}>
       <div className="page-eyebrow">Templates</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h1 className="page-title">Email Templates</h1>

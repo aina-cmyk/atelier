@@ -29,6 +29,7 @@ export default function PipelinePage() {
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [filterStatus, setFilterStatus] = useState<string>('All')
   const [filterBand, setFilterBand] = useState<string>('All')
+  const [filterDate, setFilterDate] = useState<string>('All Time')
   const [sortByScore, setSortByScore] = useState<'asc' | 'desc' | null>(null)
   const router = useRouter()
   const [editingNotes, setEditingNotes] = useState<string | null>(null)
@@ -113,6 +114,27 @@ export default function PipelinePage() {
     }
   }
 
+  function filterByDate(dateStr: string): boolean {
+    if (filterDate === 'All Time') return true
+    const parts = dateStr.split('/')
+    if (parts.length !== 3) return false
+    const date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+    if (isNaN(date.getTime())) return false
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    if (filterDate === 'Today') return date >= today
+    if (filterDate === 'Yesterday') {
+      const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+      return date >= yesterday && date < today
+    }
+    if (filterDate === 'This Week') {
+      const cutoff = new Date(today); cutoff.setDate(today.getDate() - 7); return date >= cutoff
+    }
+    if (filterDate === 'This Month') return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
+    if (filterDate === 'This Year') return date.getFullYear() === now.getFullYear()
+    return true
+  }
+
   function getBandClass(band: string) {
     const classes: Record<string, string> = {
       Hot: 'band band-hot',
@@ -145,7 +167,7 @@ export default function PipelinePage() {
   }
 
   return (
-    <div>
+    <div style={{ zoom: 0.8 }}>
       <div className="page-eyebrow">Pipeline</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <h1 className="page-title">Atelier Pipeline</h1>
@@ -182,7 +204,6 @@ export default function PipelinePage() {
             { label: 'Follow-up 2', count: leads.filter(l => l.status === 'Follow-up 2').length, color: 'var(--orange-400)' },
             { label: 'Replied', count: leads.filter(l => l.status === 'Replied').length, color: 'var(--green-400)' },
             { label: 'Qualified', count: leads.filter(l => l.status === 'Qualified').length, color: 'var(--green-400)' },
-            { label: 'Passed', count: leads.filter(l => l.status === 'Passed').length, color: 'var(--slate-300)' },
           ].filter(s => s.count > 0).map(s => (
             <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: '#fff', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-sm)' }}>
               <span style={{ fontSize: 20, fontWeight: 600, color: s.color }}>{s.count}</span>
@@ -204,37 +225,36 @@ export default function PipelinePage() {
       )}
 
       {!loading && !error && leads.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
-            <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0, width: 40 }}>Status</span>
-            <div className="role-row" style={{ margin: 0 }}>
-              {['All', 'Researched', 'Sent', 'Called', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Qualified', 'Passed'].map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className={`role-btn ${filterStatus === s ? 'active' : ''}`}
-                  style={{ fontSize: 11, padding: '3px 10px' }}
-                >
-                  {s}
-                </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {[
+            { label: 'All statuses', value: filterStatus, set: setFilterStatus, options: ['All', 'Sent', 'Called', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Qualified'], defaultLabel: 'All statuses' },
+            { label: 'All bands', value: filterBand, set: setFilterBand, options: ['All', 'Hot', 'Warm', 'Watch', 'Pass'], defaultLabel: 'All bands' },
+            { label: 'All Time', value: filterDate, set: setFilterDate, options: ['All Time', 'Today', 'Yesterday', 'This Week', 'This Month', 'This Year'], defaultLabel: 'All Time' },
+          ].map(f => (
+            <select
+              key={f.label}
+              value={f.value}
+              onChange={e => f.set(e.target.value)}
+              style={{
+                fontSize: 12, padding: '4px 10px', border: '1px solid var(--black-100)',
+                borderRadius: 'var(--radius-sm)', outline: 'none', cursor: 'pointer', height: 28,
+                background: f.value !== f.defaultLabel ? '#050849' : '#fff',
+                color: f.value !== f.defaultLabel ? '#fff' : 'var(--text-default)'
+              }}
+            >
+              {f.options.map(o => (
+                <option key={o} value={o}>{o === 'All' ? f.defaultLabel : o}</option>
               ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
-            <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-400)', flexShrink: 0, width: 40 }}>Band</span>
-            <div className="role-row" style={{ margin: 0 }}>
-              {['All', 'Hot', 'Warm', 'Watch', 'Pass'].map(b => (
-                <button
-                  key={b}
-                  onClick={() => setFilterBand(b)}
-                  className={`role-btn ${filterBand === b ? 'active' : ''}`}
-                  style={{ fontSize: 11, padding: '3px 10px' }}
-                >
-                  {b}
-                </button>
-              ))}
-            </div>
-          </div>
+            </select>
+          ))}
+          {(filterStatus !== 'All' || filterBand !== 'All' || filterDate !== 'All Time') && (
+            <button
+              onClick={() => { setFilterStatus('All'); setFilterBand('All'); setFilterDate('All Time') }}
+              style={{ fontSize: 11, color: 'var(--slate-400)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 
@@ -278,6 +298,7 @@ export default function PipelinePage() {
               {leads.filter(lead => {
                 if (filterStatus !== 'All' && lead.status !== filterStatus) return false
                 if (filterBand !== 'All' && lead.score_band !== filterBand) return false
+                if (!filterByDate(lead.date_added)) return false
                 return true
               }).sort((a, b) => {
                 if (!sortByScore) return 0
@@ -331,7 +352,7 @@ export default function PipelinePage() {
                         padding: '2px 4px', borderRadius: 4
                       }}
                     >
-                      {['Researched', 'Sent', 'Called', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Qualified', 'Passed'].map(s => (
+                      {['Sent', 'Called', 'Follow-up 1', 'Follow-up 2', 'Replied', 'Qualified'].map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>

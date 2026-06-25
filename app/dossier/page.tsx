@@ -346,7 +346,7 @@ export default function DossierPage() {
     : 'Unknown'
 
   return (
-    <div>
+    <div style={{ zoom: 0.8 }}>
       {/* Tab bar */}
       <div style={{
         display: 'flex', alignItems: 'stretch',
@@ -708,31 +708,22 @@ export default function DossierPage() {
           <button onClick={handleProceed} className="btn btn-primary" style={{ flex: 1, height: 48, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
             Find contacts
           </button>
-          <button onClick={handleSave} disabled={ui.saving} className="btn btn-secondary" style={{ flex: 1, height: 48, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
-            {ui.saving ? 'Saving...' : 'Save to pipeline'}
-          </button>
           <button
             onClick={saveBrand}
             disabled={ui.savingBrand || ui.brandSaved}
             style={{
-              height: 48, padding: '0 16px', cursor: ui.brandSaved ? 'default' : 'pointer',
+              flex: 1, height: 48, cursor: ui.brandSaved ? 'default' : 'pointer',
               background: ui.brandSaved ? 'var(--green-100)' : '#fff',
               border: '1px solid', borderColor: ui.brandSaved ? 'var(--green-300)' : 'var(--black-100)',
               borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 500,
               color: ui.brandSaved ? 'var(--green-400)' : 'var(--slate-500)',
-              display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 24px rgba(0,0,0,0.12)'
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 4px 24px rgba(0,0,0,0.12)'
             }}
           >
             <svg width="14" height="14" fill={ui.brandSaved ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             {ui.savingBrand ? 'Saving...' : ui.brandSaved ? 'Saved' : 'Save brand'}
-          </button>
-          <button
-            onClick={handlePass}
-            style={{ height: 48, padding: '0 20px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--slate-400)', textDecoration: 'underline' }}
-          >
-            Pass
           </button>
         </div>
         {ui.saved && (

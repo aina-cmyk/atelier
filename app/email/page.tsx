@@ -129,6 +129,10 @@ export default function EmailPage() {
   const followUpContextRef = useRef<{original_subject?: string; contact_name?: string; date_sent?: string} | null>(null)
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
   const pendingSelectionRef = useRef<[number, number] | null>(null)
+  const linkInputRef = useRef<HTMLInputElement>(null)
+  const savedLinkSelectionRef = useRef<[number, number] | null>(null)
+  const [showLinkInput, setShowLinkInput] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
 
   function getTabLabel(id: string): string {
     if (id === activeTabId) {
@@ -673,10 +677,48 @@ export default function EmailPage() {
       .replace(/\*\*(.+?)\*\*/g, '$1')
       .replace(/\*(.+?)\*/g, '$1')
       .replace(/^#{1,6} /gm, '')
-      .replace(/^- /gm, '')
+      .replace(/^ *- /gm, '')
     const newBody = body.slice(0, offset) + cleaned + body.slice(offset + target.length)
     pendingSelectionRef.current = [offset, offset + cleaned.length]
     setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+  }
+
+  function handleLinkButtonMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    const ta = bodyTextareaRef.current
+    if (!ta || !email) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (end > start) {
+      savedLinkSelectionRef.current = [start, end]
+      setLinkUrl('')
+      setShowLinkInput(true)
+      setTimeout(() => linkInputRef.current?.focus(), 0)
+    } else {
+      const body = ta.value
+      const insert = '[link text](url)'
+      const newBody = body.slice(0, start) + insert + body.slice(start)
+      pendingSelectionRef.current = [start + 1, start + 10]
+      setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 1, start + 10) }, 0)
+    }
+  }
+
+  function insertLink() {
+    const ta = bodyTextareaRef.current
+    if (!ta || !email || !savedLinkSelectionRef.current) return
+    const [start, end] = savedLinkSelectionRef.current
+    const body = ta.value
+    const selectedText = body.slice(start, end)
+    const url = linkUrl.trim() || 'url'
+    const replacement = `[${selectedText}](${url})`
+    const newBody = body.slice(0, start) + replacement + body.slice(end)
+    pendingSelectionRef.current = [start + replacement.length, start + replacement.length]
+    setEmail(prev => prev ? { ...prev, body: newBody } : prev)
+    setShowLinkInput(false)
+    setLinkUrl('')
+    savedLinkSelectionRef.current = null
+    setTimeout(() => ta.focus(), 0)
   }
 
   function getDefaultScheduledAt(): string {
@@ -829,7 +871,7 @@ export default function EmailPage() {
   )
 
   return (
-    <div>
+    <div style={{ zoom: 0.8 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--black-100)' }}>
         {tabIds.map(id => (
           <div
@@ -1290,32 +1332,80 @@ export default function EmailPage() {
               </div>
               <div ref={pitchRef} style={{ position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '3px 6px', background: 'var(--slate-100)', border: '1px solid var(--black-100)', borderRadius: 'var(--radius-xs)', marginBottom: 6 }}>
-                  {([
-                    { label: 'B', title: 'Bold', extra: { fontWeight: 700 }, action: () => applyInlineFormat('**', '**') },
-                    { label: 'I', title: 'Italic', extra: { fontStyle: 'italic' as const }, action: () => applyInlineFormat('*', '*') },
-                    { label: '•', title: 'Bullet point', extra: {}, action: () => applyLineFormat('- ') },
-                    { label: 'H', title: 'Header', extra: { letterSpacing: '-0.02em' }, action: () => applyLineFormat('## ') },
-                    { label: '✕', title: 'Clear formatting', extra: { fontSize: 10 }, action: clearFormatting },
-                  ] as { label: string; title: string; extra: React.CSSProperties; action: () => void }[]).map((btn, i) => (
-                    <button
-                      key={btn.label}
-                      title={btn.title}
-                      onMouseDown={e => { e.preventDefault(); btn.action() }}
-                      style={{
-                        width: 28, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'none', border: 'none', cursor: 'pointer', borderRadius: 4,
-                        fontSize: 13, color: 'var(--slate-500)', transition: 'background 0.1s, color 0.1s',
-                        ...(i === 4 ? { marginLeft: 4 } : {}),
-                        ...btn.extra,
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#050849'; e.currentTarget.style.color = '#fff' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--slate-500)' }}
-                    >
-                      {btn.label}
-                    </button>
-                  ))}
-                  <div style={{ width: 1, height: 14, background: 'var(--black-100)', margin: '0 6px 0 2px' }} />
-                  <span style={{ fontSize: 11, color: 'var(--slate-300)', userSelect: 'none' }}>Format</span>
+                  {showLinkInput ? (
+                    <>
+                      <span style={{ fontSize: 11, color: 'var(--slate-400)', marginRight: 4, flexShrink: 0 }}>URL:</span>
+                      <input
+                        ref={linkInputRef}
+                        value={linkUrl}
+                        onChange={e => setLinkUrl(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); insertLink() }
+                          if (e.key === 'Escape') { setShowLinkInput(false); setLinkUrl(''); setTimeout(() => bodyTextareaRef.current?.focus(), 0) }
+                        }}
+                        placeholder="https://…"
+                        style={{
+                          flex: 1, height: 22, fontSize: 12, padding: '0 8px',
+                          border: '1px solid var(--black-100)', borderRadius: 4,
+                          outline: 'none', background: '#fff', minWidth: 0,
+                        }}
+                      />
+                      <button
+                        onMouseDown={e => { e.preventDefault(); insertLink() }}
+                        title="Insert link"
+                        style={{ width: 26, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050849', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff', fontSize: 12, marginLeft: 4, flexShrink: 0 }}
+                      >✓</button>
+                      <button
+                        onMouseDown={e => { e.preventDefault(); setShowLinkInput(false); setLinkUrl(''); setTimeout(() => bodyTextareaRef.current?.focus(), 0) }}
+                        title="Cancel"
+                        style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', borderRadius: 4, cursor: 'pointer', color: 'var(--slate-400)', fontSize: 13, flexShrink: 0 }}
+                      >✕</button>
+                    </>
+                  ) : (
+                    <>
+                      {([
+                        { label: 'B', title: 'Bold', extra: { fontWeight: 700 }, action: () => applyInlineFormat('**', '**') },
+                        { label: 'I', title: 'Italic', extra: { fontStyle: 'italic' as const }, action: () => applyInlineFormat('*', '*') },
+                        { label: '•', title: 'Bullet', extra: {}, action: () => applyLineFormat('  - ') },
+                        { label: '↳', title: 'Sub-bullet', extra: { fontSize: 12 }, action: () => applyLineFormat('    - ') },
+                        { label: 'H', title: 'Header', extra: { letterSpacing: '-0.02em' }, action: () => applyLineFormat('## ') },
+                        { label: '✕', title: 'Clear formatting', extra: { fontSize: 10 }, action: clearFormatting },
+                      ] as { label: string; title: string; extra: React.CSSProperties; action: () => void }[]).map((btn, i) => (
+                        <button
+                          key={btn.label}
+                          title={btn.title}
+                          onMouseDown={e => { e.preventDefault(); btn.action() }}
+                          style={{
+                            width: 28, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'none', border: 'none', cursor: 'pointer', borderRadius: 4,
+                            fontSize: 13, color: 'var(--slate-500)', transition: 'background 0.1s, color 0.1s',
+                            ...(i === 5 ? { marginLeft: 4 } : {}),
+                            ...btn.extra,
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#050849'; e.currentTarget.style.color = '#fff' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--slate-500)' }}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                      <div style={{ width: 1, height: 14, background: 'var(--black-100)', margin: '0 4px' }} />
+                      <button
+                        title="Insert link"
+                        onMouseDown={handleLinkButtonMouseDown}
+                        style={{
+                          width: 28, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'none', border: 'none', cursor: 'pointer', borderRadius: 4,
+                          fontSize: 14, color: 'var(--slate-500)', transition: 'background 0.1s, color 0.1s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#050849'; e.currentTarget.style.color = '#fff' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--slate-500)' }}
+                      >
+                        🔗
+                      </button>
+                      <div style={{ width: 1, height: 14, background: 'var(--black-100)', margin: '0 6px 0 2px' }} />
+                      <span style={{ fontSize: 11, color: 'var(--slate-300)', userSelect: 'none' }}>Format</span>
+                    </>
+                  )}
                 </div>
                 <textarea
                   ref={bodyTextareaRef}

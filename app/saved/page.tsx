@@ -12,10 +12,33 @@ interface SavedBrand {
   created_at: string
 }
 
+const DATE_OPTIONS = ['All Time', 'Today', 'Yesterday', 'This Week', 'This Month', 'This Year']
+
+function filterByDate(dateStr: string, filter: string): boolean {
+  if (filter === 'All Time') return true
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return false
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (filter === 'Today') return date >= today
+  if (filter === 'Yesterday') {
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+    return date >= yesterday && date < today
+  }
+  if (filter === 'This Week') {
+    const cutoff = new Date(today); cutoff.setDate(today.getDate() - 7); return date >= cutoff
+  }
+  if (filter === 'This Month') return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
+  if (filter === 'This Year') return date.getFullYear() === now.getFullYear()
+  return true
+}
+
 export default function SavedBrandsPage() {
   const [brands, setBrands] = useState<SavedBrand[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingBrand, setLoadingBrand] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterDate, setFilterDate] = useState('All Time')
   const router = useRouter()
 
   useEffect(() => {
@@ -65,11 +88,55 @@ export default function SavedBrandsPage() {
     }
   }
 
+  const filteredBrands = brands.filter(b => {
+    if (searchQuery && !b.brand_name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (!filterByDate(b.created_at, filterDate)) return false
+    return true
+  })
+
   return (
-    <div>
+    <div style={{ zoom: 0.8 }}>
       <div className="page-eyebrow">Saved Brands</div>
-      <h1 className="page-title">Saved Brands</h1>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+        <h1 className="page-title" style={{ margin: 0 }}>Saved Brands</h1>
+        <span style={{ fontSize: 13, color: 'var(--slate-400)', paddingTop: 6 }}>{filteredBrands.length} brand{filteredBrands.length !== 1 ? 's' : ''}</span>
+      </div>
       <p className="page-sub">Brands saved from research dossiers and suggested brands — excludes brands already in your pipeline.</p>
+
+      {!loading && brands.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search brands…"
+            style={{
+              fontSize: 12, padding: '4px 10px', border: '1px solid var(--black-100)',
+              borderRadius: 'var(--radius-sm)', outline: 'none', height: 28, minWidth: 180
+            }}
+          />
+          <select
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+            style={{
+              fontSize: 12, padding: '4px 10px', border: '1px solid var(--black-100)',
+              borderRadius: 'var(--radius-sm)', outline: 'none', cursor: 'pointer', height: 28,
+              background: filterDate !== 'All Time' ? '#050849' : '#fff',
+              color: filterDate !== 'All Time' ? '#fff' : 'var(--text-default)'
+            }}
+          >
+            {DATE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {(searchQuery || filterDate !== 'All Time') && (
+            <button
+              onClick={() => { setSearchQuery(''); setFilterDate('All Time') }}
+              style={{ fontSize: 11, color: 'var(--slate-400)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {loading && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--slate-400)', fontSize: 14, marginTop: 32 }}>
@@ -89,9 +156,15 @@ export default function SavedBrandsPage() {
         </div>
       )}
 
-      {!loading && brands.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 24, alignItems: 'stretch' }}>
-          {brands.map((brand, i) => (
+      {!loading && brands.length > 0 && filteredBrands.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--slate-400)', fontSize: 13 }}>
+          No brands match your filters.
+        </div>
+      )}
+
+      {!loading && filteredBrands.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 8, alignItems: 'stretch' }}>
+          {filteredBrands.map((brand, i) => (
             <div key={i} className="card-hair" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                 <div>

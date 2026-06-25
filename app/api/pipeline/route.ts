@@ -30,7 +30,12 @@ export async function GET() {
       return NextResponse.json({ success: true, leads: [] })
     }
 
-    const leads = rows.slice(1).map(row => ({
+    const leads = rows.slice(1)
+      .filter(row => {
+        const name = (row[0] ?? '').trim()
+        return name !== '' && name !== 'Brand Name' && name !== 'brand_name'
+      })
+      .map(row => ({
       brand_name: row[0] ?? '',
       website: row[1] ?? '',
       lead_source: row[2] ?? '',
