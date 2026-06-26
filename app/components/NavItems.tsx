@@ -62,7 +62,7 @@ export default function NavItems({ gmailUrl }: { gmailUrl: string }) {
         </a>
       </div>
       <div style={{ position: 'relative' }}>
-        <a href="/email" className="nav-item" style={navStyle('/email')}>
+        <a href="/email" className="nav-item" style={{ background: (isActive('/email') || isActive('/templates')) ? 'rgba(255,255,255,0.1)' : 'transparent', borderRadius: 'var(--radius-sm)' }}>
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" strokeWidth="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" strokeWidth="2"/></svg>
           Email Generator
         </a>
@@ -73,6 +73,10 @@ export default function NavItems({ gmailUrl }: { gmailUrl: string }) {
             <line x1="10" y1="14" x2="21" y2="3" strokeWidth="2" strokeLinecap="round"/>
           </svg>
           Gmail Inbox ↗
+        </a>
+        <a href="/templates" className="nav-item nav-subtab" style={{ paddingLeft: 40, fontSize: 12, opacity: 0.7 }}>
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeWidth="2"/><polyline points="14,2 14,8 20,8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="16" y1="13" x2="8" y2="13" strokeWidth="2" strokeLinecap="round"/><line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round"/></svg>
+          Templates
         </a>
       </div>
       <div style={{ position: 'relative' }}>
@@ -89,10 +93,7 @@ export default function NavItems({ gmailUrl }: { gmailUrl: string }) {
           Google Sheets ↗
         </a>
       </div>
-      <a href="/templates" className="nav-item" style={navStyle('/templates')}>
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeWidth="2"/><polyline points="14,2 14,8 20,8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="16" y1="13" x2="8" y2="13" strokeWidth="2" strokeLinecap="round"/><line x1="16" y1="17" x2="8" y2="17" strokeWidth="2" strokeLinecap="round"/></svg>
-        Templates
-      </a>
+
     </>
   )
 }
